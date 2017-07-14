@@ -1,0 +1,254 @@
+/* tsk.c
+ *
+ * Copyright (C) 2017 Yi-Wei Ci
+ *
+ * Distributed under the terms of the MIT license.
+ */
+
+#include "tsk.h"
+
+int vres_tsk_get(vres_t *resource, vres_id_t *id)
+{
+	int i;
+	int ret = 0;
+	vres_t res = *resource;
+	const int retry_max = 256;
+	vres_id_t curr = resource->key;
+	vres_t *tsk = &res;
+
+	for (i = 0; i < retry_max; i++) {
+		vres_lock(tsk);
+		ret = vres_create(tsk);
+		if (ret) {
+			vres_unlock(tsk);
+			if (ret == -EEXIST) {
+				if (curr < VRES_ID_MAX)
+					curr += 1;
+				else
+					curr = 1;
+				tsk->key = curr;
+				tsk->owner = curr;
+				continue;
+			}
+		}
+		break;
+	}
+
+	if (ret) {
+		log_err("failed to register");
+		return ret;
+	}
+
+	ret = vres_check_path(tsk);
+	if (ret) {
+		log_err("faild to check path");
+		vres_remove(tsk);
+	} else if (id)
+		*id = curr;
+	vres_unlock(tsk);
+	return ret;
+}
+
+
+void vres_tsk_get_resource(vres_id_t id, vres_t *resource)
+{
+	memset(resource, 0, sizeof(vres_t));
+	resource->cls = VRES_CLS_TSK;
+	resource->key = id;
+	resource->owner = id;
+}
+
+
+void *vres_tsk_request(void *ptr)
+{
+	vres_tsk_req_t *req = (vres_tsk_req_t *)ptr;
+	vres_t *resource = &req->resource;
+
+	if (TSK_WAKEUP == req->cmd) {
+		vres_tskctl_arg_t arg;
+		vres_tskctl_result_t result;
+
+		vres_set_op(resource, VRES_OP_TSKCTL);
+		arg.cmd = TSK_WAKEUP;
+		klnk_io_direct(resource, (char *)&arg, sizeof(vres_tskctl_arg_t), (char *)&result, sizeof(vres_tskctl_result_t), req->addr);
+	}
+	free(ptr);
+	return NULL;
+}
+
+
+int vres_tsk_put(vres_t *resource)
+{
+	vres_t res;
+	int ret = 0;
+	vres_t *tsk = &res;
+	tmp_entry_t *entry;
+	char path[VRES_PATH_MAX];
+
+	vres_tsk_get_resource(resource->owner, tsk);
+	vres_lock(tsk);
+	vres_get_mig_path(resource, path);
+	entry = tmp_get_entry(path, sizeof(vres_addr_t), TMP_RDONLY);
+	if (entry) {
+		vres_addr_t *addr;
+
+		addr = tmp_get_desc(entry, vres_addr_t);
+		if (memcmp(&node_addr, addr, sizeof(vres_addr_t))) {
+			pthread_t tid;
+			vres_tsk_req_t *req;
+			pthread_attr_t attr;
+
+			req = (vres_tsk_req_t *)malloc(sizeof(vres_tsk_req_t));
+			if (!req) {
+				vres_log_err(resource, "no memory");
+				tmp_put_entry(entry);
+				ret = -ENOMEM;
+				goto out;
+			}
+
+			memcpy(&req->resource, tsk, sizeof(vres_t));
+			memcpy(&req->addr, addr, sizeof(vres_addr_t));
+			req->cmd = TSK_WAKEUP;
+
+			pthread_attr_init(&attr);
+			pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+			pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM);
+			ret = pthread_create(&tid, &attr, vres_tsk_request, req);
+			pthread_attr_destroy(&attr);
+			if (ret) {
+				vres_log_err(resource, "failed to request");
+				free(req);
+			}
+		}
+		tmp_put_entry(entry);
+	}
+	vres_remove(tsk);
+	vres_get_root_path(tsk, path);
+	tmp_rmdir(path);
+	if (!ret)
+		log_tsk_put(resource);
+out:
+	vres_unlock(tsk);
+	return ret;
+}
+
+
+int vres_tsk_suspend(vres_id_t id)
+{
+	int fd;
+	int ret;
+	vres_t res;
+	ckpt_arg_t arg;
+	vres_desc_t desc;
+	vres_t *tsk = &res;
+
+	vres_tsk_get_resource(id, tsk);
+	ret = vres_lookup(tsk, &desc);
+	if (ret) {
+		log_err("failed to lookup");
+		return ret;
+	}
+
+	memset(&arg, 0, sizeof(ckpt_arg_t));
+	arg.id = desc.id;
+
+	fd = open(CKPT_DEV_FILE, O_RDONLY);
+	if (fd < 0) {
+		log_err("failed to open file");
+		return -EINVAL;
+	}
+
+	ret = ioctl(fd, CKPT_IOCTL_SUSPEND, (int)&arg);
+	close(fd);
+	if (ret) {
+		log_err("failed to ioctl");
+		return ret;
+	}
+
+	log_tsk_suspend(id);
+	return 0;
+}
+
+
+int vres_tsk_resume(vres_id_t id)
+{
+	int fd;
+	int ret;
+	vres_t res;
+	ckpt_arg_t arg;
+	vres_desc_t desc;
+	vres_t *tsk = &res;
+
+	vres_tsk_get_resource(id, tsk);
+	ret = vres_lookup(tsk, &desc);
+	if (ret) {
+		log_err("failed to lookup");
+		return ret;
+	}
+
+	memset(&arg, 0, sizeof(ckpt_arg_t));
+	arg.id = desc.id;
+
+	fd = open(CKPT_DEV_FILE, O_RDONLY);
+	if (fd < 0) {
+		log_err("failed to open file");
+		return -EINVAL;
+	}
+
+	ret = ioctl(fd, CKPT_IOCTL_RESUME, (int)&arg);
+	close(fd);
+	if (ret) {
+		log_err("failed to ioctl");
+		return ret;
+	}
+
+	log_tsk_resume(id);
+	return 0;
+}
+
+
+int vres_tsk_wakeup(vres_t *resource)
+{
+	pid_t pid;
+
+	pid = fork();
+	if (pid < 0) {
+		vres_log_err(resource, "failed to create process");
+		return -EINVAL;
+	} else if (0 == pid) {
+		char cmd[512];
+
+		sprintf(cmd,
+		        "lxc-attach -q -n %s -s 'MOUNT|IPC|NETWORK|UTSNAME' -- %s -r %d",
+		        master_name,
+		        PATH_DUMP,
+		        resource->owner);
+		log_tsk_wakeup(cmd);
+		system(cmd);
+		tsk_log(resource);
+		_exit(0);
+	}
+
+	return 0;
+}
+
+
+vres_reply_t *vres_tsk_tskctl(vres_req_t *req, int flags)
+{
+	int ret = 0;
+	vres_reply_t *reply = NULL;
+	vres_t *resource = &req->resource;
+	vres_tskctl_arg_t *arg = (vres_tskctl_arg_t *)req->buf;
+
+	if (TSK_WAKEUP == arg->cmd)
+		ret = vres_tsk_wakeup(resource);
+	else {
+		vres_log_err(resource, "invalid cmd");
+		ret = -EINVAL;
+		goto out;
+	}
+	log_tsk_tskctl(resource, arg->cmd);
+out:
+	vres_create_reply(vres_tskctl_result_t, ret, reply);
+	return reply;
+}

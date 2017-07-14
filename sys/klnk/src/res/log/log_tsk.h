@@ -1,0 +1,39 @@
+#ifndef _LOG_TSK_H
+#define _LOG_TSK_H
+
+#include "log.h"
+
+#ifdef LOG_TSK_PUT
+#define log_tsk_put(resource) vres_log(resource)
+#else
+#define log_tsk_put(...) do {} while(0)
+#endif
+
+#ifdef LOG_TSK_RESUME
+#define log_tsk_resume(id) log_debug("id=%d", id)
+#else
+#define log_tsk_resume(...) do {} while(0)
+#endif
+
+#ifdef LOG_TSK_SUSPEND
+#define log_tsk_suspend(id) log_debug("id=%d", id)
+#else
+#define log_tsk_suspend(...) do {} while(0)
+#endif
+
+#ifdef LOG_TSK_TSKCTL
+#define log_tsk_tskctl(resource, cmd) do {\
+	log_resource(resource);\
+	log(", cmd=%d\n", cmd);\
+} while (0)
+#else
+#define log_tsk_tskctl(...) do {} while(0)
+#endif
+
+#ifdef LOG_TSK_WAKEUP
+#define log_tsk_wakeup(cmd) log_debug("cmd=%s", cmd)
+#else
+#define log_tsk_wakeup(...) do {} while(0)
+#endif
+
+#endif

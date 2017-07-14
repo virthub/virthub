@@ -1,0 +1,21 @@
+#!/bin/bash
+
+SYSTEM=`uname`
+if [ "$SYSTEM" = "Linux" ]; then
+	FILE=`readlink -f $0`
+elif [ "$SYSTEM" = "Darwin" ]; then
+	FILE=`greadlink -f $0`
+else
+	echo "Error: unknown system"
+	exit
+fi
+CURRENT=`pwd`
+BIN=`dirname "$FILE"`
+HOME=`dirname "$BIN"`
+cd "$HOME"
+{
+	python scripts/start.py $1
+} || {
+	echo "Failed to start :-("
+}
+cd "$CURRENT"

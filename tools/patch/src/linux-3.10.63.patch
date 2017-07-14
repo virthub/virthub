@@ -1,0 +1,2209 @@
+diff -rc linux-3.10.63/arch/x86/include/asm/pgtable.h linux-3.10.63-klnk/arch/x86/include/asm/pgtable.h
+*** linux-3.10.63/arch/x86/include/asm/pgtable.h	2014-12-17 01:09:56.000000000 +0800
+--- linux-3.10.63-klnk/arch/x86/include/asm/pgtable.h	2014-12-23 11:12:18.000000000 +0800
+***************
+*** 132,137 ****
+--- 132,144 ----
+  	return pte_flags(pte) & _PAGE_SPECIAL;
+  }
+  
++ #ifdef CONFIG_KLNK
++ static inline int pte_dump(pte_t pte)
++ {
++ 	return pte_flags(pte) & _PAGE_DUMP;
++ }
++ #endif
++ 
+  static inline unsigned long pte_pfn(pte_t pte)
+  {
+  	return (pte_val(pte) & PTE_PFN_MASK) >> PAGE_SHIFT;
+***************
+*** 245,250 ****
+--- 252,269 ----
+  	return pte_set_flags(pte, _PAGE_SPECIAL);
+  }
+  
++ #ifdef CONFIG_KLNK
++ static inline pte_t pte_mkdump(pte_t pte)
++ {
++ 	return pte_set_flags(pte, _PAGE_DUMP);
++ }
++ 
++ static inline pte_t pte_clrdump(pte_t pte)
++ {
++ 	return pte_clear_flags(pte, _PAGE_DUMP);
++ }
++ #endif
++ 
+  static inline pmd_t pmd_set_flags(pmd_t pmd, pmdval_t set)
+  {
+  	pmdval_t v = native_pmd_val(pmd);
+diff -rc linux-3.10.63/arch/x86/include/asm/pgtable_types.h linux-3.10.63-klnk/arch/x86/include/asm/pgtable_types.h
+*** linux-3.10.63/arch/x86/include/asm/pgtable_types.h	2014-12-17 01:09:56.000000000 +0800
+--- linux-3.10.63-klnk/arch/x86/include/asm/pgtable_types.h	2014-12-23 11:14:58.000000000 +0800
+***************
+*** 23,28 ****
+--- 23,31 ----
+  #define _PAGE_BIT_SPECIAL	_PAGE_BIT_UNUSED1
+  #define _PAGE_BIT_CPA_TEST	_PAGE_BIT_UNUSED1
+  #define _PAGE_BIT_SPLITTING	_PAGE_BIT_UNUSED1 /* only valid on a PSE pmd */
++ #ifdef CONFIG_KLNK
++ #define _PAGE_BIT_DUMP		_PAGE_BIT_UNUSED1
++ #endif
+  #define _PAGE_BIT_NX           63       /* No execute: only valid after cpuid check */
+  
+  /* If _PAGE_BIT_PRESENT is clear, we use these: */
+***************
+*** 47,52 ****
+--- 50,58 ----
+  #define _PAGE_SPECIAL	(_AT(pteval_t, 1) << _PAGE_BIT_SPECIAL)
+  #define _PAGE_CPA_TEST	(_AT(pteval_t, 1) << _PAGE_BIT_CPA_TEST)
+  #define _PAGE_SPLITTING	(_AT(pteval_t, 1) << _PAGE_BIT_SPLITTING)
++ #ifdef CONFIG_KLNK
++ #define _PAGE_DUMP	(_AT(pteval_t, 1) << _PAGE_BIT_DUMP)
++ #endif
+  #define __HAVE_ARCH_PTE_SPECIAL
+  
+  #ifdef CONFIG_KMEMCHECK
+Only in linux-3.10.63-klnk/arch/x86/include: generated
+diff -rc linux-3.10.63/arch/x86/syscalls/syscall_32.tbl linux-3.10.63-klnk/arch/x86/syscalls/syscall_32.tbl
+*** linux-3.10.63/arch/x86/syscalls/syscall_32.tbl	2014-12-17 01:09:56.000000000 +0800
+--- linux-3.10.63-klnk/arch/x86/syscalls/syscall_32.tbl	2014-12-23 12:24:54.000000000 +0800
+***************
+*** 357,359 ****
+--- 357,362 ----
+  348	i386	process_vm_writev	sys_process_vm_writev		compat_sys_process_vm_writev
+  349	i386	kcmp			sys_kcmp
+  350	i386	finit_module		sys_finit_module
++ 351	i386	shm_rdprotect	sys_shm_rdprotect
++ 352	i386	shm_wrprotect	sys_shm_wrprotect
++ 353	i386	shm_present		sys_shm_present
+Only in linux-3.10.63-klnk: .config
+diff -rc linux-3.10.63/fs/namei.c linux-3.10.63-klnk/fs/namei.c
+*** linux-3.10.63/fs/namei.c	2014-12-17 01:09:56.000000000 +0800
+--- linux-3.10.63-klnk/fs/namei.c	2017-04-21 13:04:20.673366980 +0800
+***************
+*** 40,45 ****
+--- 40,49 ----
+  #include "internal.h"
+  #include "mount.h"
+  
++ #ifdef CONFIG_KLNK
++ #include <linux/klnk.h>
++ #endif
++ 
+  /* [Feb-1997 T. Schoebel-Theuer]
+   * Fundamental changes in the pathname lookup mechanisms (namei)
+   * were necessary because of omirr.  The reason is that omirr needs
+***************
+*** 2993,3004 ****
+  {
+  	struct nameidata nd;
+  	struct file *filp;
+! 
+  	filp = path_openat(dfd, pathname, &nd, op, flags | LOOKUP_RCU);
+  	if (unlikely(filp == ERR_PTR(-ECHILD)))
+  		filp = path_openat(dfd, pathname, &nd, op, flags);
+  	if (unlikely(filp == ERR_PTR(-ESTALE)))
+  		filp = path_openat(dfd, pathname, &nd, op, flags | LOOKUP_REVAL);
+  	return filp;
+  }
+  
+--- 2997,3017 ----
+  {
+  	struct nameidata nd;
+  	struct file *filp;
+! #ifdef CONFIG_KLNK
+! again:
+! #endif
+  	filp = path_openat(dfd, pathname, &nd, op, flags | LOOKUP_RCU);
+  	if (unlikely(filp == ERR_PTR(-ECHILD)))
+  		filp = path_openat(dfd, pathname, &nd, op, flags);
+  	if (unlikely(filp == ERR_PTR(-ESTALE)))
+  		filp = path_openat(dfd, pathname, &nd, op, flags | LOOKUP_REVAL);
++ #ifdef CONFIG_KLNK
++ 	if (unlikely(filp == ERR_PTR(-EMIGRATE))) {
++ 		filp = klnk_filp_open(pathname);
++ 		if (filp == ERR_PTR(-EAGAIN))
++ 			goto again;
++ 	}
++ #endif
+  	return filp;
+  }
+  
+Only in linux-3.10.63-klnk/include: config
+Only in linux-3.10.63-klnk/include: generated
+Only in linux-3.10.63-klnk/include/linux: klnk.h
+diff -rc linux-3.10.63/include/linux/mm.h linux-3.10.63-klnk/include/linux/mm.h
+*** linux-3.10.63/include/linux/mm.h	2014-12-17 01:09:56.000000000 +0800
+--- linux-3.10.63-klnk/include/linux/mm.h	2014-12-23 12:27:24.000000000 +0800
+***************
+*** 895,900 ****
+--- 895,903 ----
+  #define VM_FAULT_NOPAGE	0x0100	/* ->fault installed the pte, not return page */
+  #define VM_FAULT_LOCKED	0x0200	/* ->fault locked the returned page */
+  #define VM_FAULT_RETRY	0x0400	/* ->fault blocked, must retry */
++ #ifdef CONFIG_KLNK
++ #define VM_FAULT_SYNC	0x0800
++ #endif
+  
+  #define VM_FAULT_HWPOISON_LARGE_MASK 0xf000 /* encodes hpage index for large hwpoison */
+  
+diff -rc linux-3.10.63/include/linux/sched.h linux-3.10.63-klnk/include/linux/sched.h
+*** linux-3.10.63/include/linux/sched.h	2014-12-17 01:09:56.000000000 +0800
+--- linux-3.10.63-klnk/include/linux/sched.h	2014-12-23 12:28:15.000000000 +0800
+***************
+*** 1131,1137 ****
+  
+  	pid_t pid;
+  	pid_t tgid;
+! 
+  #ifdef CONFIG_CC_STACKPROTECTOR
+  	/* Canary value for the -fstack-protector gcc feature */
+  	unsigned long stack_canary;
+--- 1131,1140 ----
+  
+  	pid_t pid;
+  	pid_t tgid;
+! #ifdef CONFIG_KLNK
+! 	pid_t gpid;
+! 	struct file *ckpt;
+! #endif
+  #ifdef CONFIG_CC_STACKPROTECTOR
+  	/* Canary value for the -fstack-protector gcc feature */
+  	unsigned long stack_canary;
+diff -rc linux-3.10.63/include/linux/shm.h linux-3.10.63-klnk/include/linux/shm.h
+*** linux-3.10.63/include/linux/shm.h	2014-12-17 01:09:56.000000000 +0800
+--- linux-3.10.63-klnk/include/linux/shm.h	2014-12-23 12:29:31.000000000 +0800
+***************
+*** 29,34 ****
+--- 29,38 ----
+  #define SHM_HUGETLB     04000   /* segment will use huge TLB pages */
+  #define SHM_NORESERVE   010000  /* don't check for reservations */
+  
++ #ifdef CONFIG_KLNK
++ extern void klnk_shm_exit(struct task_struct *task);
++ #endif
++ 
+  /* Bits [26:31] are reserved */
+  
+  /*
+diff -rc linux-3.10.63/include/linux/syscalls.h linux-3.10.63-klnk/include/linux/syscalls.h
+*** linux-3.10.63/include/linux/syscalls.h	2014-12-17 01:09:56.000000000 +0800
+--- linux-3.10.63-klnk/include/linux/syscalls.h	2014-12-23 12:30:40.000000000 +0800
+***************
+*** 846,849 ****
+--- 846,855 ----
+  asmlinkage long sys_kcmp(pid_t pid1, pid_t pid2, int type,
+  			 unsigned long idx1, unsigned long idx2);
+  asmlinkage long sys_finit_module(int fd, const char __user *uargs, int flags);
++ 
++ #ifdef CONFIG_KLNK
++ asmlinkage long sys_shm_rdprotect(key_t key, unsigned long pgoff, char __user * buf);
++ asmlinkage long sys_shm_wrprotect(key_t key, unsigned long pgoff, char __user * buf);
++ asmlinkage long sys_shm_present(key_t key, pid_t gpid, unsigned long pgoff, int flags);
++ #endif
+  #endif
+Only in linux-3.10.63-klnk/include/linux: vres.h
+diff -rc linux-3.10.63/include/uapi/linux/sem.h linux-3.10.63-klnk/include/uapi/linux/sem.h
+*** linux-3.10.63/include/uapi/linux/sem.h	2014-12-17 01:09:56.000000000 +0800
+--- linux-3.10.63-klnk/include/uapi/linux/sem.h	2014-12-23 12:32:19.000000000 +0800
+***************
+*** 18,23 ****
+--- 18,26 ----
+  /* ipcs ctl cmds */
+  #define SEM_STAT 18
+  #define SEM_INFO 19
++ #ifdef CONFIG_KLNK
++ #define SEM_NSEMS 20
++ #endif
+  
+  /* Obsolete, used only for backwards compatibility and libc5 compiles */
+  struct semid_ds {
+diff -rc linux-3.10.63/init/Kconfig linux-3.10.63-klnk/init/Kconfig
+*** linux-3.10.63/init/Kconfig	2014-12-17 01:09:56.000000000 +0800
+--- linux-3.10.63-klnk/init/Kconfig	2014-12-23 12:33:43.000000000 +0800
+***************
+*** 27,32 ****
+--- 27,37 ----
+  	bool
+  
+  menu "General setup"
++ config KLNK
++ 	bool "Kernel Linker"
++ 	default y
++ 	help
++ 	  For providing consistent computing environment
+  
+  config BROKEN
+  	bool
+diff -rc linux-3.10.63/ipc/msg.c linux-3.10.63-klnk/ipc/msg.c
+*** linux-3.10.63/ipc/msg.c	2014-12-17 01:09:56.000000000 +0800
+--- linux-3.10.63-klnk/ipc/msg.c	2016-02-26 23:28:07.495406581 +0800
+***************
+*** 42,47 ****
+--- 42,51 ----
+  #include <asm/uaccess.h>
+  #include "util.h"
+  
++ #ifdef CONFIG_KLNK
++ #include <linux/klnk.h>
++ #endif
++ 
+  /*
+   * one msg_receiver structure for each sleeping receiver:
+   */
+***************
+*** 122,129 ****
+--- 126,135 ----
+  #ifdef CONFIG_IPC_NS
+  void msg_exit_ns(struct ipc_namespace *ns)
+  {
++ #ifndef CONFIG_KLNK
+  	free_ipcs(ns, &msg_ids(ns), freeque);
+  	idr_destroy(&ns->ids[IPC_MSG_IDS].ipcs_idr);
++ #endif
+  }
+  #endif
+  
+***************
+*** 162,168 ****
+  
+  static inline void msg_rmid(struct ipc_namespace *ns, struct msg_queue *s)
+  {
+! 	ipc_rmid(&msg_ids(ns), &s->q_perm);
+  }
+  
+  static void msg_rcu_free(struct rcu_head *head)
+--- 168,177 ----
+  
+  static inline void msg_rmid(struct ipc_namespace *ns, struct msg_queue *s)
+  {
+! #ifdef CONFIG_KLNK
+! 	if (!klnk_is_global(current))
+! #endif
+! 		ipc_rmid(&msg_ids(ns), &s->q_perm);
+  }
+  
+  static void msg_rcu_free(struct rcu_head *head)
+***************
+*** 297,303 ****
+  	return security_msg_queue_associate(msq, msgflg);
+  }
+  
+! SYSCALL_DEFINE2(msgget, key_t, key, int, msgflg)
+  {
+  	struct ipc_namespace *ns;
+  	struct ipc_ops msg_ops;
+--- 306,312 ----
+  	return security_msg_queue_associate(msq, msgflg);
+  }
+  
+! long do_msgget(key_t key, int msgflg)
+  {
+  	struct ipc_namespace *ns;
+  	struct ipc_ops msg_ops;
+***************
+*** 315,320 ****
+--- 324,349 ----
+  	return ipcget(ns, &msg_ids(ns), &msg_ops, &msg_params);
+  }
+  
++ #ifdef CONFIG_KLNK
++ int klnk_msg_msgget(key_t key, int msgflg)
++ {
++ 	int ret = klnk_request(VRES_CLS_MSG, key, VRES_OP_MSGGET, 
++ 	                       klnk_get_gpid(current), 0, msgflg, NULL, 0, 0);
++ 	
++ 	return ret < 0 ? ret : key;
++ }
++ #endif
++ 
++ SYSCALL_DEFINE2(msgget, key_t, key, int, msgflg)
++ {
++ #ifdef CONFIG_KLNK
++ 	if (klnk_is_global(current))
++ 		return klnk_msg_msgget(key, msgflg);
++ 	else
++ #endif
++ 		return do_msgget(key, msgflg);
++ }
++ 
+  static inline unsigned long
+  copy_msqid_to_user(void __user *buf, struct msqid64_ds *in, int version)
+  {
+***************
+*** 579,585 ****
+  	return err;
+  }
+  
+! SYSCALL_DEFINE3(msgctl, int, msqid, int, cmd, struct msqid_ds __user *, buf)
+  {
+  	int version;
+  	struct ipc_namespace *ns;
+--- 608,614 ----
+  	return err;
+  }
+  
+! long do_msgctl(int msqid, int cmd, struct msqid_ds __user *buf)
+  {
+  	int version;
+  	struct ipc_namespace *ns;
+***************
+*** 604,609 ****
+--- 633,707 ----
+  	}
+  }
+  
++ #ifdef CONFIG_KLNK
++ int klnk_msg_msgctl(key_t key, int cmd, struct msqid_ds __user *value)
++ {
++ 	int ret;
++ 	char *buf;
++ 	size_t buflen;
++ 	int version = ipc_parse_version(&cmd);
++ 	size_t inlen = sizeof(vres_msgctl_arg_t);
++ 	size_t outlen = sizeof(vres_msgctl_result_t);
++ 
++ 	if (version != IPC_64)
++ 		return -EINVAL;
++ 	
++ 	switch (cmd) {
++ 	case IPC_SET:
++ 		inlen += sizeof(struct msqid64_ds);
++ 		break;
++ 	case IPC_STAT:
++ 	case MSG_STAT:
++ 		outlen += sizeof(struct msqid64_ds);
++ 		break;
++ 	case IPC_INFO:
++ 	case MSG_INFO:
++ 		outlen += sizeof(struct msginfo);
++ 		break;
++ 	}
++ 	buflen = max(inlen, outlen);
++ 	buf = klnk_malloc(buflen);
++ 	if (!buf)
++ 		return -ENOMEM;
++ 	else {
++ 		vres_msgctl_arg_t *arg = (vres_msgctl_arg_t *)buf;
++ 		
++ 		arg->cmd = cmd;
++ 		if (IPC_SET == cmd)
++ 			if (copy_from_user(&arg[1], value, sizeof(struct msqid64_ds))) {
++ 				ret = -EFAULT;
++ 				goto out;
++ 			}
++ 	}
++ 	ret = klnk_request(VRES_CLS_MSG, key, VRES_OP_MSGCTL, 
++ 	                   klnk_get_gpid(current), 0, 0, buf, inlen, outlen);
++ 	if (!ret) {
++ 		vres_msgctl_result_t *result = (vres_msgctl_result_t *)buf;
++ 		
++ 		ret = result->retval;
++ 		if (ret < 0)
++ 			goto out;
++ 			
++ 		if (copy_to_user(value, &result[1], outlen - sizeof(vres_msgctl_result_t)))
++ 			ret = -EFAULT;
++ 	}
++ out:
++ 	klnk_msg_log("key=%d, cmd=%d, version=%d, ret=%d", key, cmd, version, ret);
++ 	klnk_free(buf, buflen);
++ 	return ret;
++ }
++ #endif
++ 
++ SYSCALL_DEFINE3(msgctl, int, msqid, int, cmd, struct msqid_ds __user *, buf)
++ {
++ #ifdef CONFIG_KLNK
++ 	if (klnk_is_global(current))
++ 		return klnk_msg_msgctl(msqid, cmd, buf);
++ 	else
++ #endif
++ 		return do_msgctl(msqid, cmd, buf);
++ }
++ 
+  static int testmsg(struct msg_msg *msg, long type, int mode)
+  {
+  	switch(mode)
+***************
+*** 768,781 ****
+  	return err;
+  }
+  
+  SYSCALL_DEFINE4(msgsnd, int, msqid, struct msgbuf __user *, msgp, size_t, msgsz,
+  		int, msgflg)
+  {
+! 	long mtype;
+  
+! 	if (get_user(mtype, &msgp->mtype))
+! 		return -EFAULT;
+! 	return do_msgsnd(msqid, mtype, msgp->mtext, msgsz, msgflg);
+  }
+  
+  static inline int convert_mode(long *msgtyp, int msgflg)
+--- 866,934 ----
+  	return err;
+  }
+  
++ #ifdef CONFIG_KLNK
++ long klnk_msg_msgsnd(key_t key, struct msgbuf __user *msgp, size_t msgsz, int msgflg)
++ {
++ 	int ret;
++ 	char *buf;
++ 	long msgtyp;
++ 	struct ipc_namespace *ns = current->nsproxy->ipc_ns;
++ 	size_t inlen = sizeof(vres_msgsnd_arg_t) + msgsz + sizeof(long); // sizeof(mtype) => sizeof(long)
++ 	size_t outlen = sizeof(vres_msgsnd_result_t);
++ 	size_t buflen = max(inlen, outlen);
++ 	
++ 	if ((msgsz > ns->msg_ctlmax) || ((long)msgsz < 0) || (buflen > KLNK_IO_MAX))
++ 		return -EINVAL;
++ 		
++ 	if (get_user(msgtyp, &msgp->mtype))
++ 		return -EFAULT;
++ 		
++ 	if (msgtyp < 1)
++ 		return -EINVAL;
++ 		
++ 	buf = klnk_malloc(buflen);
++ 	if (!buf) 
++ 		return -ENOMEM;
++ 	else {
++ 		vres_msgsnd_arg_t *arg = (vres_msgsnd_arg_t *)buf;
++ 		
++ 		arg->msgsz = msgsz;
++ 		arg->msgflg = msgflg;
++ 		arg->msgtyp = msgtyp;
++ 		if(copy_from_user(&arg[1], msgp, msgsz + sizeof(long))) {
++ 			ret = -EFAULT;
++ 			goto out;
++ 		}
++ 	}
++ 	ret = klnk_request(VRES_CLS_MSG, key, VRES_OP_MSGSND, 
++ 	                   klnk_get_gpid(current), 0, 0, buf, inlen, outlen);
++ 	if (!ret) {
++ 		vres_msgsnd_result_t *result = (vres_msgsnd_result_t *)buf;
++ 		
++ 		ret = result->retval;
++ 	}
++ out:
++ 	klnk_msg_log("key=%d, msgtyp=%ld, msgsz=%d, msgflg=%d, ret=%d", key, msgtyp, msgsz, msgflg, ret);
++ 	klnk_free(buf, buflen);
++ 	return ret;
++ }
++ #endif
++ 
+  SYSCALL_DEFINE4(msgsnd, int, msqid, struct msgbuf __user *, msgp, size_t, msgsz,
+  		int, msgflg)
+  {
+! #ifdef CONFIG_KLNK
+! 	if (klnk_is_global(current))
+! 		return klnk_msg_msgsnd(msqid, msgp, msgsz, msgflg);
+! 	else
+! #endif
+! 	{
+! 		long mtype;
+  
+! 		if (get_user(mtype, &msgp->mtype))
+! 			return -EFAULT;
+! 		return do_msgsnd(msqid, mtype, msgp->mtext, msgsz, msgflg);
+! 	}
+  }
+  
+  static inline int convert_mode(long *msgtyp, int msgflg)
+***************
+*** 1034,1043 ****
+  	return bufsz;
+  }
+  
+  SYSCALL_DEFINE5(msgrcv, int, msqid, struct msgbuf __user *, msgp, size_t, msgsz,
+  		long, msgtyp, int, msgflg)
+  {
+! 	return do_msgrcv(msqid, msgp, msgsz, msgtyp, msgflg, do_msg_fill);
+  }
+  
+  #ifdef CONFIG_PROC_FS
+--- 1187,1250 ----
+  	return bufsz;
+  }
+  
++ #ifdef CONFIG_KLNK
++ long klnk_msg_msgrcv(key_t key, struct msgbuf __user *msgp,
++ 		size_t msgsz, long msgtyp, int msgflg)
++ {
++ 	int ret;
++ 	char *buf;
++ 	vres_msgrcv_arg_t *arg;
++ 	size_t inlen = sizeof(vres_msgrcv_arg_t);
++ 	size_t outlen = sizeof(vres_msgrcv_result_t) + msgsz + sizeof(long); // sizeof(long) = sizeof(mtype)
++ 	size_t buflen = max(inlen, outlen);
++ 	
++ 	if (((long)msgsz < 0) || (buflen > KLNK_IO_MAX))
++ 		return -EINVAL;
++ 	
++ 	buf = klnk_malloc(buflen);
++ 	if (!buf)
++ 		return -ENOMEM;
++ 	
++ 	arg = (vres_msgrcv_arg_t *)buf;
++ 	arg->msgtyp = msgtyp;
++ 	arg->msgsz = msgsz;
++ 	arg->msgflg = msgflg;
++ 	ret = klnk_request(VRES_CLS_MSG, key, VRES_OP_MSGRCV, 
++ 	                   klnk_get_gpid(current), 0, 0, buf, inlen, outlen);
++ 	if (!ret) {
++ 		vres_msgrcv_result_t *result = (vres_msgrcv_result_t *)buf;
++ 		struct msgbuf *kmsgp = (struct msgbuf *)&result[1];
++ 		
++ 		ret = result->retval;
++ 		if (ret < 0)
++ 			goto out;
++ 			
++ 		if (copy_to_user(msgp->mtext, kmsgp->mtext, ret)) {
++ 			ret = -EFAULT;
++ 			goto out;
++ 		}
++ 		
++ 		if (put_user(kmsgp->mtype, &msgp->mtype)) {
++ 			ret = -EFAULT;
++ 			goto out;
++ 		}
++ 	}
++ out:
++ 	klnk_msg_log("key=%d, msgtyp=%ld, msgsz=%d, msgflg=%d, ret=%d", key, msgtyp, msgsz, msgflg, ret);
++ 	klnk_free(buf, buflen);
++ 	return ret;
++ }
++ #endif
++ 
+  SYSCALL_DEFINE5(msgrcv, int, msqid, struct msgbuf __user *, msgp, size_t, msgsz,
+  		long, msgtyp, int, msgflg)
+  {
+! #ifdef CONFIG_KLNK
+! 	if (klnk_is_global(current))
+! 		return klnk_msg_msgrcv(msqid, msgp, msgsz, msgtyp, msgflg);
+! 	else
+! #endif
+! 		return do_msgrcv(msqid, msgp, msgsz, msgtyp, msgflg, do_msg_fill);
+  }
+  
+  #ifdef CONFIG_PROC_FS
+diff -rc linux-3.10.63/ipc/sem.c linux-3.10.63-klnk/ipc/sem.c
+*** linux-3.10.63/ipc/sem.c	2014-12-17 01:09:56.000000000 +0800
+--- linux-3.10.63-klnk/ipc/sem.c	2016-02-26 23:46:12.293255515 +0800
+***************
+*** 90,95 ****
+--- 90,99 ----
+  #include <asm/uaccess.h>
+  #include "util.h"
+  
++ #ifdef CONFIG_KLNK
++ #include <linux/klnk.h>
++ #endif
++ 
+  /* One semaphore structure for each semaphore in the system. */
+  struct sem {
+  	int	semval;		/* current value */
+***************
+*** 126,131 ****
+--- 130,139 ----
+  	struct list_head	list_id;	/* per semaphore array list:
+  						 * all undos for one array */
+  	int			semid;		/* semaphore set identifier */
++ #ifdef CONFIG_KLNK
++ 	pid_t 		gpid;
++ 	key_t 		key;
++ #endif
+  	short			*semadj;	/* array of adjustments */
+  						/* one per semaphore */
+  };
+***************
+*** 183,190 ****
+--- 191,200 ----
+  #ifdef CONFIG_IPC_NS
+  void sem_exit_ns(struct ipc_namespace *ns)
+  {
++ #ifndef CONFIG_KLNK
+  	free_ipcs(ns, &sem_ids(ns), freeary);
+  	idr_destroy(&ns->ids[IPC_SEM_IDS].ipcs_idr);
++ #endif
+  }
+  #endif
+  
+***************
+*** 430,436 ****
+--- 440,448 ----
+  
+  static inline void sem_rmid(struct ipc_namespace *ns, struct sem_array *s)
+  {
++ #ifndef CONFIG_KLNK
+  	ipc_rmid(&sem_ids(ns), &s->sem_perm);
++ #endif
+  }
+  
+  /*
+***************
+*** 562,568 ****
+  	return 0;
+  }
+  
+! SYSCALL_DEFINE3(semget, key_t, key, int, nsems, int, semflg)
+  {
+  	struct ipc_namespace *ns;
+  	struct ipc_ops sem_ops;
+--- 574,580 ----
+  	return 0;
+  }
+  
+! long do_semget(key_t key, int nsems, int semflg)
+  {
+  	struct ipc_namespace *ns;
+  	struct ipc_ops sem_ops;
+***************
+*** 584,589 ****
+--- 596,621 ----
+  	return ipcget(ns, &sem_ids(ns), &sem_ops, &sem_params);
+  }
+  
++ #ifdef CONFIG_KLNK
++ int klnk_sem_semget(key_t key, int nsems, int semflg)
++ {
++ 	int ret = klnk_request(VRES_CLS_SEM, key, VRES_OP_SEMGET, 
++ 	                       klnk_get_gpid(current), nsems, semflg, NULL, 0, 0);
++ 	
++ 	return ret < 0 ? ret : key;
++ }
++ #endif
++ 
++ SYSCALL_DEFINE3(semget, key_t, key, int, nsems, int, semflg)
++ {
++ #ifdef CONFIG_KLNK
++ 	if (klnk_is_global(current))
++ 		return klnk_sem_semget(key, nsems, semflg);
++ 	else
++ #endif
++ 		return do_semget(key, nsems, semflg);
++ }
++ 
+  /** perform_atomic_semop - Perform (if possible) a semaphore operation
+   * @sma: semaphore array
+   * @sops: array with operations that should be checked
+***************
+*** 1554,1560 ****
+  	return err;
+  }
+  
+! SYSCALL_DEFINE4(semctl, int, semid, int, semnum, int, cmd, unsigned long, arg)
+  {
+  	int version;
+  	struct ipc_namespace *ns;
+--- 1586,1592 ----
+  	return err;
+  }
+  
+! long do_semctl(int semid, int semnum, int cmd, unsigned long arg)
+  {
+  	int version;
+  	struct ipc_namespace *ns;
+***************
+*** 1589,1594 ****
+--- 1621,1772 ----
+  	}
+  }
+  
++ #ifdef CONFIG_KLNK
++ int klnk_sem_get_nsems(key_t key)
++ {
++ 	int ret;
++ 	char *buf;
++ 	vres_semctl_arg_t *arg;
++ 	vres_semctl_result_t *result;
++     size_t inlen = sizeof(vres_semctl_arg_t);
++ 	size_t outlen = sizeof(vres_semctl_result_t);
++ 	size_t buflen = max(inlen, outlen);
++ 	
++ 	if (buflen > KLNK_IO_MAX)
++ 		return -EINVAL;
++ 	
++ 	buf = klnk_malloc(buflen);
++ 	if (!buf)
++ 		return -ENOMEM;
++ 	
++ 	arg = (vres_semctl_arg_t *)buf;
++ 	arg->cmd = SEM_NSEMS;
++ 	ret = klnk_request(VRES_CLS_SEM, key, VRES_OP_SEMCTL, 
++ 	                   klnk_get_gpid(current), 0, 0, buf, inlen, outlen);
++ 	if (!ret) {
++ 		result = (vres_semctl_result_t *)buf;
++ 		ret = result->retval;
++ 	}
++ 	
++ 	klnk_sem_log("key=%d, ret=%d", key, ret);
++ 	klnk_free(buf, buflen);
++ 	return ret;
++ }
++ 
++ long klnk_sem_semctl(key_t key, int semnum, int cmd, unsigned long value)
++ {
++ 	int ret;
++ 	int nsems = 0;
++ 	size_t buflen;
++ 	char *buf = NULL;
++ 	void __user *p = (void __user *)value;
++ 	int version = ipc_parse_version(&cmd);
++ 	size_t inlen = sizeof(vres_semctl_arg_t);
++ 	size_t outlen = sizeof(vres_semctl_result_t);
++ 	
++ 	if (version != IPC_64)
++ 		return -EINVAL;
++ 	
++ 	switch (cmd) {
++ 	case IPC_INFO:
++ 	case SEM_INFO:
++ 		outlen += sizeof(struct seminfo);
++ 		break;
++ 	case IPC_STAT:
++ 	case SEM_STAT:
++ 		outlen += sizeof(struct semid64_ds);
++ 		break;
++ 	case SETALL:
++ 	case GETALL:
++ 		nsems = klnk_sem_get_nsems(key);
++ 		if (nsems <= 0) {
++ 			klnk_sem_log("failed (nsems <= 0), key=%d, cmd=%d", key, cmd);
++ 			return -EINVAL;
++ 		}
++ 		if (SETALL == cmd)
++ 			inlen += sizeof(ushort) * nsems;
++ 		else
++ 			outlen += sizeof(ushort) * nsems;
++ 	case SETVAL:
++ 		inlen += sizeof(int);
++ 		break;
++ 	case IPC_SET:
++ 		inlen += sizeof(struct semid64_ds);
++ 		break;
++ 	}
++ 	buflen = max(inlen, outlen);
++ 	buf = klnk_malloc(buflen);
++ 	if (!buf)
++ 		return -ENOMEM;
++ 	else {
++ 		vres_semctl_arg_t *arg = (vres_semctl_arg_t *)buf;
++ 		
++ 		arg->semnum = semnum;
++ 		arg->cmd = cmd;
++ 		switch (cmd) {
++ 		case SETALL:
++ 			if (copy_from_user(&arg[1], p, nsems * sizeof(ushort))) {
++ 				ret = -EFAULT;
++ 				goto out;
++ 			}
++ 			break;
++ 		case SETVAL:
++ #if defined(CONFIG_64BIT) && defined(__BIG_ENDIAN)
++ 			*(int *)&arg[1] = value >> 32;
++ #else
++ 			*(int *)&arg[1] = value;
++ #endif
++ 			break;
++ 		case IPC_SET:
++ 			if (copy_from_user(&arg[1], p, sizeof(struct semid64_ds))) {
++ 				ret = -EFAULT;
++ 				goto out;
++ 			}
++ 			break;
++ 		}
++ 	}
++ 	ret = klnk_request(VRES_CLS_SEM, key, VRES_OP_SEMCTL, 
++ 	                   klnk_get_gpid(current), 0, 0, buf, inlen, outlen);
++ 	if (!ret) {
++ 		vres_semctl_result_t *result = (vres_semctl_result_t *)buf;
++ 		
++ 		ret = result->retval;
++ 		if (ret < 0)
++ 			goto out;
++ 		switch (cmd) {
++ 		case IPC_INFO:
++ 		case SEM_INFO:
++ 			if (copy_to_user(p, &result[1], outlen - sizeof(vres_semctl_result_t)))
++ 				ret = -EFAULT;
++ 			break;
++ 		case IPC_STAT:
++ 		case SEM_STAT:
++ 			if (copy_to_user(p, &result[1], outlen - sizeof(vres_semctl_result_t)))
++ 				ret = -EFAULT;
++ 			break;
++ 		case GETALL:
++ 			if (copy_to_user(p, &result[1], outlen - sizeof(vres_semctl_result_t)))
++ 				ret = -EFAULT;
++ 			break;
++ 		}
++ 	}
++ out:
++ 	klnk_sem_log("key=%d, cmd=%d, ret=%d", key, cmd, ret);
++ 	klnk_free(buf, buflen);
++ 	return ret;
++ }
++ #endif
++ 
++ SYSCALL_DEFINE4(semctl, int, semid, int, semnum, int, cmd, unsigned long, arg)
++ {
++ #ifdef CONFIG_KLNK
++ 	if (klnk_is_global(current))
++ 		return klnk_sem_semctl(semid, semnum, cmd, arg);
++ 	else
++ #endif
++ 		return do_semctl(semid, semnum, cmd, arg);
++ }
++ 
+  /* If the task doesn't already have a undo_list, then allocate one
+   * here.  We guarantee there is only one thread using this undo list,
+   * and current is THE ONE
+***************
+*** 1759,1766 ****
+  	return error;
+  }
+  
+! SYSCALL_DEFINE4(semtimedop, int, semid, struct sembuf __user *, tsops,
+! 		unsigned, nsops, const struct timespec __user *, timeout)
+  {
+  	int error = -EINVAL;
+  	struct sem_array *sma;
+--- 1937,1944 ----
+  	return error;
+  }
+  
+! long do_semtimedop(int semid, struct sembuf __user *tsops, 
+! 		unsigned nsops, const struct timespec __user *timeout)
+  {
+  	int error = -EINVAL;
+  	struct sem_array *sma;
+***************
+*** 1989,1994 ****
+--- 2167,2297 ----
+  	return error;
+  }
+  
++ #ifdef CONFIG_KLNK
++ static struct sem_undo *klnk_sem_lookup_undo(struct sem_undo_list *ulp, key_t key)
++ {
++ 	struct sem_undo *item;
++ 
++ 	list_for_each_entry_rcu(item, &ulp->list_proc, list_proc) {
++ 		if (item->key == key)
++ 			return item;
++ 	}
++ 	return NULL;
++ }
++ 
++ struct sem_undo *klnk_sem_find_undo(key_t key)
++ {
++ 	struct sem_undo_list *ulp;
++ 	struct sem_undo *un, *new;
++ 	int error;
++ 
++ 	error = get_undo_list(&ulp);
++ 	if (error)
++ 		return ERR_PTR(error);
++ 
++ 	spin_lock(&ulp->lock);
++ 	un = klnk_sem_lookup_undo(ulp, key);
++ 	if (likely(un != NULL))
++ 		goto out;
++ 
++ 	new = kzalloc(sizeof(struct sem_undo), GFP_KERNEL);
++ 	if (!new) {
++ 		un = ERR_PTR(-ENOMEM);
++ 		goto out;
++ 	}
++ 	new->key = key;
++ 	new->gpid = current->gpid;
++ 	list_add_rcu(&new->list_proc, &ulp->list_proc);
++ 	un = new;
++ out:
++ 	spin_unlock(&ulp->lock);
++ 	return un;
++ }
++ 
++ long klnk_sem_semtimedop(key_t key, struct sembuf __user *tsops,
++ 		     unsigned nsops, const struct timespec __user *timeout)
++ {
++ 	int ret;
++ 	char *buf;
++ 	int undos = 0;
++ 	struct sembuf *sem;
++ 	struct ipc_namespace *ns = current->nsproxy->ipc_ns;
++ 	size_t inlen = sizeof(struct timespec) + sizeof(vres_semop_arg_t) + nsops * sizeof(struct sembuf);
++ 	size_t outlen = sizeof(vres_semop_result_t);
++ 	size_t buflen = max(inlen, outlen);
++ 	vres_semctl_result_t *result;
++ 	vres_semop_arg_t *arg;
++ 	
++ 	if ((nsops < 1) || (buflen > KLNK_IO_MAX))
++ 		return -EINVAL;
++ 		
++ 	if (nsops > ns->sc_semopm)
++ 		return -E2BIG;
++ 		
++ 	buf = klnk_malloc(buflen);
++ 	if (!buf) {
++ 		klnk_log("key=%d, no memory", key);
++ 		return -ENOMEM;
++ 	}
++ 	memset(buf, 0, buflen);
++ 	arg = (vres_semop_arg_t *)buf;
++ 	if (timeout) {
++ 		if (copy_from_user(&arg->timeout, timeout, sizeof(struct timespec))) {
++ 			klnk_log("key=%d, failed to get timeout", key);
++ 			ret = -EFAULT;
++ 			goto out;
++ 		}
++ 	}
++ 	arg->nsops = nsops;
++ 	if (copy_from_user(arg->sops, tsops, nsops * sizeof(struct sembuf))) {
++ 		klnk_log("key=%d, failed to get sops", key);
++ 		ret = -EFAULT;
++ 		goto out;
++ 	}
++ 	for (sem = arg->sops; sem < arg->sops + nsops; sem++) {
++ 		if (sem->sem_flg & SEM_UNDO) {
++ 			undos = 1;
++ 			break;
++ 		}
++ 	}
++ 	ret = klnk_request(VRES_CLS_SEM, key, VRES_OP_SEMOP, 
++ 	                   klnk_get_gpid(current), 0, 0, buf, inlen, outlen);
++ 	if (ret) {
++ 		klnk_log("key=%d, failed to ioctl, ret=%d", key, ret);
++ 		goto out;
++ 	}
++ 	result = (vres_semctl_result_t *)buf;
++ 	ret = result->retval;
++ 	if (ret) {
++ 		klnk_log("key=%d, failed, ret=%d", key, ret);
++ 		goto out;
++ 	}
++ 	if (undos) {
++ 		struct sem_undo *un = klnk_sem_find_undo(key);
++ 		
++ 		if (IS_ERR(un)) {
++ 			klnk_log("key=%d, failed to find undo", key);
++ 			ret = PTR_ERR(un);
++ 		}
++ 	}
++  out:
++ 	klnk_sem_log("key=%d, ret=%d", key, ret);
++ 	klnk_free(buf, buflen);
++ 	return ret;
++ }
++ #endif
++ 
++ SYSCALL_DEFINE4(semtimedop, int, semid, struct sembuf __user *, tsops,
++ 		unsigned, nsops, const struct timespec __user *, timeout)
++ {
++ #ifdef CONFIG_KLNK
++ 	if (klnk_is_global(current))
++ 		return klnk_sem_semtimedop(semid, tsops, nsops, timeout);
++ 	else
++ #endif
++ 		return do_semtimedop(semid, tsops, nsops, timeout);
++ }
++ 
+  SYSCALL_DEFINE3(semop, int, semid, struct sembuf __user *, tsops,
+  		unsigned, nsops)
+  {
+***************
+*** 2016,2034 ****
+  	return 0;
+  }
+  
+! /*
+!  * add semadj values to semaphores, free undo structures.
+!  * undo structures are not freed when semaphore arrays are destroyed
+!  * so some of them may be out of date.
+!  * IMPLEMENTATION NOTE: There is some confusion over whether the
+!  * set of adjustments that needs to be done should be done in an atomic
+!  * manner or not. That is, if we are attempting to decrement the semval
+!  * should we queue up and wait until we can do so legally?
+!  * The original implementation attempted to do this (queue and wait).
+!  * The current implementation does not do so. The POSIX standard
+!  * and SVID should be consulted to determine what behavior is mandated.
+!  */
+! void exit_sem(struct task_struct *tsk)
+  {
+  	struct sem_undo_list *ulp;
+  
+--- 2319,2325 ----
+  	return 0;
+  }
+  
+! void do_exit_sem(struct task_struct *tsk)
+  {
+  	struct sem_undo_list *ulp;
+  
+***************
+*** 2128,2133 ****
+--- 2419,2470 ----
+  	kfree(ulp);
+  }
+  
++ #ifdef CONFIG_KLNK
++ void klnk_sem_exit(struct task_struct *tsk)
++ {
++ 	struct sem_undo_list *ulp;
++ 	struct sem_undo *item, *next;
++ 	ulp = tsk->sysvsem.undo_list;
++ 	if (!ulp)
++ 		return;
++ 
++ 	if (!atomic_dec_and_test(&ulp->refcnt))
++ 		return;
++ 
++ 	/* There's no need to hold the semundo list lock, as current
++      * is the last task exiting for this undo list.
++ 	 */
++ 	list_for_each_entry_safe(item, next, &ulp->list_proc, list_proc) {
++ 		klnk_request(VRES_CLS_SEM, item->key, VRES_OP_SEMEXIT, 
++ 		             item->gpid, 0, 0, 0, 0, 0);
++ 		kfree(item);
++ 	}
++ 	kfree(ulp);
++ }
++ #endif
++ 
++ /*
++  * add semadj values to semaphores, free undo structures.
++  * undo structures are not freed when semaphore arrays are destroyed
++  * so some of them may be out of date.
++  * IMPLEMENTATION NOTE: There is some confusion over whether the
++  * set of adjustments that needs to be done should be done in an atomic
++  * manner or not. That is, if we are attempting to decrement the semval
++  * should we queue up and wait until we can do so legally?
++  * The original implementation attempted to do this (queue and wait).
++  * The current implementation does not do so. The POSIX standard
++  * and SVID should be consulted to determine what behavior is mandated.
++  */
++ void exit_sem(struct task_struct *tsk)
++ {
++ #ifdef CONFIG_KLNK
++ 	if (klnk_is_global(tsk))
++ 		klnk_sem_exit(tsk);
++ 	else
++ #endif
++ 		do_exit_sem(tsk);
++ }
++ 
+  #ifdef CONFIG_PROC_FS
+  static int sysvipc_sem_proc_show(struct seq_file *s, void *it)
+  {
+diff -rc linux-3.10.63/ipc/shm.c linux-3.10.63-klnk/ipc/shm.c
+*** linux-3.10.63/ipc/shm.c	2014-12-17 01:09:56.000000000 +0800
+--- linux-3.10.63-klnk/ipc/shm.c	2016-02-26 23:11:05.315032762 +0800
+***************
+*** 47,53 ****
+--- 47,66 ----
+  
+  #include "util.h"
+  
++ #ifdef CONFIG_KLNK
++ #include <linux/mmu_notifier.h>
++ #include <linux/page-flags.h>
++ #include <linux/migrate.h>
++ #include <linux/rmap.h>
++ #include <linux/swapops.h>
++ #include <linux/klnk.h>
++ #include "../mm/internal.h"
++ #endif
++ 
+  struct shm_file_data {
++ #ifdef CONFIG_KLNK
++ 	key_t key;
++ #endif
+  	int id;
+  	struct ipc_namespace *ns;
+  	struct file *file;
+***************
+*** 235,243 ****
+--- 248,261 ----
+   */
+  static bool shm_may_destroy(struct ipc_namespace *ns, struct shmid_kernel *shp)
+  {
++ #ifdef CONFIG_KLNK
++ 	return (shp->shm_nattch == 0) &&
++ 	       (ns->shm_rmid_forced || (shp->shm_perm.mode & SHM_DEST) || klnk_is_global(current));
++ #else
+  	return (shp->shm_nattch == 0) &&
+  	       (ns->shm_rmid_forced ||
+  		(shp->shm_perm.mode & SHM_DEST));
++ #endif
+  }
+  
+  /*
+***************
+*** 267,272 ****
+--- 285,318 ----
+  	up_write(&shm_ids(ns).rwsem);
+  }
+  
++ #ifdef CONFIG_KLNK
++ static int klnk_shm_destroy(int id, void *p, void *data)
++ {	
++ 	struct task_struct *tsk = data;
++ 	struct kern_ipc_perm *ipcp = p;
++ 	key_t key = ipcp->key;
++ 	
++ 	if (key)
++ 		klnk_request(VRES_CLS_SHM, key, VRES_OP_SHMPUT, 
++ 		             klnk_get_gpid(tsk), 0, 0, NULL, 0, 0);
++ 	return 0;
++ }
++ 
++ 
++ void klnk_shm_exit(struct task_struct *task)
++ {
++ 	struct ipc_namespace *ns = task->nsproxy->ipc_ns;
++ 
++ 	if (shm_ids(ns).in_use == 0)
++ 		return;
++ 
++ 	down_write(&shm_ids(ns).rwsem);
++ 	if (shm_ids(ns).in_use)
++ 		idr_for_each(&shm_ids(ns).ipcs_idr, &klnk_shm_destroy, task);
++ 	up_write(&shm_ids(ns).rwsem);
++ }
++ #endif
++ 
+  /* Called with ns->shm_ids(ns).rwsem locked */
+  static int shm_try_destroy_current(int id, void *p, void *data)
+  {
+***************
+*** 344,355 ****
+  	up_write(&shm_ids(ns).rwsem);
+  }
+  
+  static int shm_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
+  {
+  	struct file *file = vma->vm_file;
+  	struct shm_file_data *sfd = shm_file_data(file);
+  
+! 	return sfd->vm_ops->fault(vma, vmf);
+  }
+  
+  #ifdef CONFIG_NUMA
+--- 390,669 ----
+  	up_write(&shm_ids(ns).rwsem);
+  }
+  
++ #ifdef CONFIG_KLNK
++ struct page *klnk_shm_get_page(struct file *file, unsigned long pgoff)
++ {
++ 	unsigned long addr;
++ 	struct vm_area_struct *vma;
++ 	struct address_space *mapping = file->f_mapping;
++ 	struct page *page = NULL;
++ 	spinlock_t *ptl;
++ 	pte_t *ptep;
++ 		
++ 	mutex_lock(&mapping->i_mmap_mutex);
++ 	vma_interval_tree_foreach(vma, &mapping->i_mmap, pgoff, pgoff) {
++ 		addr = vma->vm_start + ((pgoff - vma->vm_pgoff) << PAGE_SHIFT);
++ 		ptep = klnk_get_pte(vma->vm_mm, addr, &ptl);
++ 		if (ptep) {
++ 			if (pte_present(*ptep))
++ 				page = pte_page(*ptep);
++ 			klnk_put_pte(ptep, ptl);
++ 			if (page)
++ 				break;
++ 		}
++ 	}
++ 	mutex_unlock(&mapping->i_mmap_mutex);
++ 	return page;
++ }
++ 
++ int klnk_shm_find_page(struct file *file, unsigned long pgoff, int flg)
++ {
++ 	int ret = 0;
++ 	pte_t *ptep;
++ 	spinlock_t *ptl;
++ 	struct mm_struct *mm;
++ 	struct vm_area_struct *vma;
++ 	struct address_space *mapping = file->f_mapping;
++ 	unsigned long addr;
++ 	
++ 	mutex_lock(&mapping->i_mmap_mutex);
++ 	vma_interval_tree_foreach(vma, &mapping->i_mmap, pgoff, pgoff) {
++ 		mm = vma->vm_mm;
++ 		addr = vma->vm_start + ((pgoff - vma->vm_pgoff) << PAGE_SHIFT);
++ 		BUG_ON(addr < vma->vm_start || addr >= vma->vm_end);
++ 		ptep = klnk_get_pte(mm, addr, &ptl);
++ 		if (ptep) {
++ 			pte_t pte = *ptep;
++ 			
++ 			if (pte_present(pte))
++ 				ret = (flg & VRES_RDWR) ? pte_write(pte) : 1;
++ 			klnk_put_pte(ptep, ptl);
++ 			if (ret)
++ 				break;
++ 		}
++ 	}
++ 	mutex_unlock(&mapping->i_mmap_mutex);
++ 	return ret;
++ }
++ 
++ int klnk_shm_present(struct file *file, pid_t gpid, unsigned long pgoff, int flg)
++ {
++ 	int ret = 0;
++ 	pte_t *ptep;
++ 	spinlock_t *ptl;
++ 	unsigned long addr;
++ 	struct mm_struct *mm;
++ 	struct vm_area_struct *vma;
++ 	struct address_space *mapping = file->f_mapping;
++ 	
++ 	mutex_lock(&mapping->i_mmap_mutex);
++ 	vma_interval_tree_foreach(vma, &mapping->i_mmap, pgoff, pgoff) {
++ 		mm = vma->vm_mm;
++ 		if (mm->owner->gpid != gpid)
++ 			continue;
++ 		addr = vma->vm_start + ((pgoff - vma->vm_pgoff) << PAGE_SHIFT);
++ 		BUG_ON(addr < vma->vm_start || addr >= vma->vm_end);
++ 		ptep = klnk_get_pte(mm, addr, &ptl);
++ 		if (ptep) {
++ 			pte_t pte = *ptep;
++ 			
++ 			if (pte_present(pte))
++ 				ret = (flg & VRES_RDWR) ? pte_write(pte) : 1;
++ 			klnk_put_pte(ptep, ptl);
++ 			if (ret)
++ 				break;
++ 		}
++ 	}
++ 	mutex_unlock(&mapping->i_mmap_mutex);
++ 	return ret;
++ }
++ 
++ void klnk_shm_wp_page(struct vm_area_struct *vma, unsigned long address)
++ {
++ 	pte_t *ptep;
++ 	spinlock_t *ptl;
++ 	struct mm_struct *mm = vma->vm_mm;
++ 	
++ 	spin_lock(&mm->page_table_lock);
++ 	ptep = klnk_get_pte(mm, address, &ptl);
++ 	if (ptep) {
++ 		pte_t pte = *ptep;
++ 			
++ 		if (pte_present(pte) && pte_write(pte)) {
++ 			flush_cache_page(vma, address, pte_pfn(pte));
++ 			ptep_set_access_flags(vma, address, ptep, pte_wrprotect(pte), 1);
++ 			update_mmu_cache(vma, address, ptep);
++ 		}
++ 		klnk_put_pte(ptep, ptl);
++ 	}
++ 	spin_unlock(&mm->page_table_lock);
++ }
++ 
++ void klnk_shm_do_wrprotect(struct address_space *mapping, unsigned long pgoff)
++ {
++ 	unsigned long addr;
++ 	struct vm_area_struct *vma;
++ 	
++ 	mutex_lock(&mapping->i_mmap_mutex);
++ 	vma_interval_tree_foreach(vma, &mapping->i_mmap, pgoff, pgoff) {
++ 		addr = vma->vm_start + ((pgoff - vma->vm_pgoff) << PAGE_SHIFT);
++ 		klnk_shm_wp_page(vma, addr);
++ 	}
++ 	mutex_unlock(&mapping->i_mmap_mutex);
++ }
++ 
++ int klnk_shm_wrprotect(struct file *file, unsigned long pgoff, char __user *buf)
++ {
++ 	struct page *page = klnk_shm_get_page(file, pgoff);
++ 	
++ 	if (page)
++ 		klnk_shm_do_wrprotect(file->f_mapping, pgoff);
++ 		
++ 	if (buf) {
++ 		if (!page) 
++ 			return -ENOENT;
++ 		if (copy_to_user(buf, page_address(page), PAGE_SIZE))
++ 			return -EFAULT;
++ 	}
++ 	return 0;
++ }
++ 
++ void klnk_shm_rp_page(struct vm_area_struct *vma, unsigned long address)
++ {
++ 	pte_t *ptep;
++ 	spinlock_t *ptl;
++ 	struct mm_struct *mm = vma->vm_mm;
++ 	
++ 	spin_lock(&mm->page_table_lock);
++ 	ptep = klnk_get_pte(mm, address, &ptl);
++ 	if (ptep) {
++ 		pte_t pte = *ptep;
++ 	
++ 		if (pte_present(pte)) {
++ 			//struct page *page = pte_page(pte);
++ 			
++ 			flush_cache_page(vma, address, pte_pfn(pte));
++ 			pte = ptep_clear_flush(vma, address, ptep);
++ 			
++ 			//if (pte_dirty(pte))
++ 			//	set_page_dirty(page);
++ 			//page_remove_rmap(page);
++ 			//page_cache_release(page);
++ 			//dec_mm_counter(mm, MM_FILEPAGES);
++ 		}
++ 		klnk_put_pte(ptep, ptl);
++ 	}
++ 	spin_unlock(&mm->page_table_lock);
++ }
++ 
++ void klnk_shm_do_rdprotect(struct address_space *mapping, unsigned long pgoff)
++ {
++ 	unsigned long addr;
++ 	struct vm_area_struct *vma;
++ 	
++ 	mutex_lock(&mapping->i_mmap_mutex);
++ 	vma_interval_tree_foreach(vma, &mapping->i_mmap, pgoff, pgoff) {
++ 		addr = vma->vm_start + ((pgoff - vma->vm_pgoff) << PAGE_SHIFT);
++ 		klnk_shm_rp_page(vma, addr);
++ 	}
++ 	mutex_unlock(&mapping->i_mmap_mutex);
++ }
++ 
++ int klnk_shm_rdprotect(struct file *file, unsigned long pgoff, char __user *buf)
++ {
++ 	struct address_space *mapping = file->f_mapping;
++ 	struct page *page = klnk_shm_get_page(file, pgoff);
++ 	
++ 	if (buf) {
++ 		if (!page)
++ 			return -ENOENT;
++ 		klnk_shm_do_wrprotect(mapping, pgoff);
++ 		if (copy_to_user(buf, page_address(page), PAGE_SIZE))
++ 			return -EFAULT;
++ 	}
++ 	if (page)
++ 		klnk_shm_do_rdprotect(mapping, pgoff);
++ 	return 0;
++ }
++ 
++ static int klnk_shm_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
++ {
++ 	int flg;
++ 	int ret;
++ 	char *buf;
++ 	struct page *page = vmf->page;
++ 	struct file *file = vma->vm_file;
++ 	unsigned long pgoff = vmf->pgoff;
++ 	struct shm_file_data *sfd = shm_file_data(file);
++ 	size_t buflen = sizeof(vres_shmfault_result_t);
++ 	key_t key = sfd->key;
++ 		
++ 	if ((vmf->flags & FAULT_FLAG_WRITE) || (vmf->flags & FAULT_FLAG_MKWRITE))
++ 		flg = VRES_RDWR;
++ 	else
++ 		flg = VRES_RDONLY;
++ 
++ 	if (klnk_shm_find_page(file, pgoff, flg)) {
++ 		klnk_shm_log("key=%d, pgoff=%ld, flags=%d, present", key, vmf->pgoff, vmf->flags);
++ 		return VM_FAULT_LOCKED | VM_FAULT_SYNC;
++ 	}
++ 	
++ 	buf = klnk_malloc(buflen);
++ 	if (!buf) {
++ 		klnk_log("key=%d, pgoff=%ld, flags=%d, no memory", key, vmf->pgoff, vmf->flags);
++ 		goto out;
++ 	}
++ 	memset(buf, 0, buflen);
++ 	ret = klnk_request(VRES_CLS_SHM, key, VRES_OP_SHMFAULT, 
++ 	                   klnk_get_gpid(current), pgoff, flg, buf, 0, buflen);
++ 	if (!ret) {
++ 		vres_shmfault_result_t *result = (vres_shmfault_result_t *)buf;
++ 		
++ 		ret = result->retval;
++ 		if (!ret) {
++ 			char *kaddr = kmap(page);
++ 			memcpy(kaddr, result->buf, PAGE_SIZE);
++ 		}
++ 	}
++ 	klnk_free(buf, buflen);
++ 	if (ret) {
++ 		klnk_log("key=%d, pgoff=%ld, flags=%d, failed, ret=%d", key, vmf->pgoff, vmf->flags, ret);
++ 		goto out;
++ 	}
++ 	klnk_shm_log("key=%d, pgoff=%ld, flags=%d", key, vmf->pgoff, vmf->flags);
++ 	return VM_FAULT_LOCKED | VM_FAULT_SYNC;
++ out:
++ 	unlock_page(page);
++ 	page_cache_release(page);
++ 	vmf->page = NULL;
++ 	return VM_FAULT_OOM;
++ }
++ 
++ static int shm_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf)
++ {
++ 	if (klnk_is_global(current)) {
++ 		lock_page(vmf->page);
++ 		klnk_shm_log("key=%d, pgoff=%d", shm_file_data(vma->vm_file)->key, (int)vmf->pgoff);
++ 		return klnk_shm_fault(vma, vmf);
++ 	}
++ 	return 0;
++ }
++ #endif
++ 
+  static int shm_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
+  {
+  	struct file *file = vma->vm_file;
+  	struct shm_file_data *sfd = shm_file_data(file);
++ 	int ret = sfd->vm_ops->fault(vma, vmf);
+  
+! #ifdef CONFIG_KLNK
+! 	if (!(ret & VM_FAULT_LOCKED) || (ret & VM_FAULT_ERROR))
+! 		return ret;
+! 		
+! 	if (klnk_is_global(current))
+! 		ret = klnk_shm_fault(vma, vmf);
+! #endif
+! 	return ret;
+  }
+  
+  #ifdef CONFIG_NUMA
+***************
+*** 464,469 ****
+--- 778,786 ----
+  	.open	= shm_open,	/* callback for a new vm-area open */
+  	.close	= shm_close,	/* callback for when the vm-area is released */
+  	.fault	= shm_fault,
++ #ifdef CONFIG_KLNK
++ 	.page_mkwrite = shm_page_mkwrite,
++ #endif
+  #if defined(CONFIG_NUMA)
+  	.set_policy = shm_set_policy,
+  	.get_policy = shm_get_policy,
+***************
+*** 607,613 ****
+  	return 0;
+  }
+  
+! SYSCALL_DEFINE3(shmget, key_t, key, size_t, size, int, shmflg)
+  {
+  	struct ipc_namespace *ns;
+  	struct ipc_ops shm_ops;
+--- 924,930 ----
+  	return 0;
+  }
+  
+! long do_shmget(key_t key, size_t size, int shmflg)
+  {
+  	struct ipc_namespace *ns;
+  	struct ipc_ops shm_ops;
+***************
+*** 626,631 ****
+--- 943,983 ----
+  	return ipcget(ns, &shm_ids(ns), &shm_ops, &shm_params);
+  }
+  
++ #ifdef CONFIG_KLNK
++ int klnk_shm_shmget(key_t key, size_t size, int shmflg)
++ {
++ 	int ret = do_shmget(key, size, shmflg | IPC_CREAT);
++ 	
++ 	if (ret < 0)
++ 		return ret;
++ 		
++ 	ret = klnk_request(VRES_CLS_SHM, key, VRES_OP_SHMGET, 
++ 	                   klnk_get_gpid(current), size, shmflg, NULL, 0, 0);
++ 	if (ret < 0) {
++ 		struct ipc_namespace *ns = current->nsproxy->ipc_ns;
++ 		struct ipc_ids *ids = &shm_ids(ns);
++ 		struct kern_ipc_perm *ipcp;
++ 		
++ 		down_write(&ids->rwsem);
++ 		ipcp = ipc_findkey(ids, key);
++ 		if (ipcp)
++ 			do_shm_rmid(ns, ipcp);
++ 		up_write(&ids->rwsem);
++ 	}
++ 	return ret < 0 ? ret : key;
++ }
++ #endif
++ 
++ SYSCALL_DEFINE3(shmget, key_t, key, size_t, size, int, shmflg)
++ {
++ #ifdef CONFIG_KLNK
++ 	if (klnk_is_global(current))
++ 		return klnk_shm_shmget(key, size, shmflg);
++ 	else
++ #endif
++ 		return do_shmget(key, size, shmflg);
++ }
++ 
+  static inline unsigned long copy_shmid_to_user(void __user *buf, struct shmid64_ds *in, int version)
+  {
+  	switch(version) {
+***************
+*** 936,942 ****
+  	return err;
+  }
+  
+! SYSCALL_DEFINE3(shmctl, int, shmid, int, cmd, struct shmid_ds __user *, buf)
+  {
+  	struct shmid_kernel *shp;
+  	int err, version;
+--- 1288,1294 ----
+  	return err;
+  }
+  
+! long do_shmctl(int shmid, int cmd, struct shmid_ds __user *buf)
+  {
+  	struct shmid_kernel *shp;
+  	int err, version;
+***************
+*** 1034,1039 ****
+--- 1386,1547 ----
+  	return err;
+  }
+  
++ #ifdef CONFIG_KLNK
++ static int klnk_shm_shmctl(key_t key, int cmd, struct shmid_ds __user *value)
++ {
++ 	int ret;
++ 	size_t buflen;
++ 	char *buf = NULL;
++ 	int version = ipc_parse_version(&cmd);
++ 	size_t inlen = sizeof(vres_shmctl_arg_t);
++ 	size_t outlen = sizeof(vres_shmctl_result_t);
++ 	
++ 	if ((key < 0) || (cmd < 0) || (version != IPC_64))
++ 		return -EINVAL;
++ 	
++ 	switch (cmd) {
++ 	case IPC_INFO:
++ 		outlen += sizeof(struct shminfo);
++ 		break;
++ 	case SHM_INFO:
++ 		outlen += sizeof(struct shm_info);
++ 		break;
++ 	case IPC_STAT:
++ 	case SHM_STAT:
++ 		outlen += sizeof(struct shmid64_ds);
++ 		break;
++ 	case IPC_SET:
++ 		inlen += sizeof(struct shmid64_ds);
++ 		break;
++ 	case IPC_RMID:
++ 		outlen = 0;
++ 		break;
++ 	default:
++ 		break;
++ 	}
++ 	buflen = max(inlen, outlen);
++ 	buf = klnk_malloc(buflen);
++ 	if (!buf)
++ 		return -ENOMEM;
++ 	else {
++ 		vres_shmctl_arg_t *arg = (vres_shmctl_arg_t *)buf;
++ 		
++ 		arg->cmd = cmd;
++ 		if (IPC_SET == cmd)
++ 			if (copy_from_user(&arg[1], value, sizeof(struct shmid64_ds))) {
++ 				ret = -EFAULT;
++ 				goto out;
++ 			}
++ 	}
++ 	ret = klnk_request(VRES_CLS_SHM, key, VRES_OP_SHMCTL, 
++ 	                   klnk_get_gpid(current), 0, 0, buf, inlen, outlen);
++ 	if (ret) {
++ 		if (-ERMID == ret)
++ 			ret = -EFAULT;
++ 		goto out;
++ 	}
++ 	
++ 	if (outlen) {
++ 		vres_shmctl_result_t *result = (vres_shmctl_result_t *)buf;
++ 		
++ 		ret = result->retval;
++ 		if (ret < 0)
++ 			goto out;
++ 			
++ 		if (copy_to_user(value, &result[1], outlen - sizeof(vres_shmctl_result_t)))
++ 			ret = -EFAULT;
++ 	}
++ out:
++ 	klnk_shm_log("key=%d, cmd=%d, ret=%d", key, cmd, ret);
++ 	klnk_free(buf, buflen);
++ 	return ret;
++ }
++ #endif
++ 
++ SYSCALL_DEFINE3(shmctl, int, shmid, int, cmd, struct shmid_ds __user *, buf)
++ {
++ #ifdef CONFIG_KLNK
++ 	if (klnk_is_global(current))
++ 		return klnk_shm_shmctl(shmid, cmd, buf);
++ 	else
++ #endif
++ 		return do_shmctl(shmid, cmd, buf);
++ }
++ 
++ #ifdef CONFIG_KLNK
++ struct file *klnk_shm_get_file(key_t key)
++ {
++ 	struct file *file;
++ 	struct shmid_kernel *shp;
++ 	struct kern_ipc_perm *ipcp;
++ 	struct ipc_namespace *ns = current->nsproxy->ipc_ns;
++ 	struct ipc_ids *ids = &shm_ids(ns);
++ 	
++ 	down_read(&ids->rwsem);
++ 	ipcp = ipc_findkey(ids, key);
++ 	if (!ipcp) {
++ 		up_read(&ids->rwsem);
++ 		return NULL;
++ 	}
++ 	shp = container_of(ipcp, struct shmid_kernel, shm_perm);
++ 	BUG_ON(IS_ERR(shp));
++ 	file = shp->shm_file;
++ 	ipc_unlock(ipcp);
++ 	up_read(&ids->rwsem);
++ 	return file;
++ }
++ 
++ SYSCALL_DEFINE4(shm_present, key_t, key, pid_t, gpid, unsigned long, pgoff, int, flags)
++ {
++ 	struct file *file = klnk_shm_get_file(key);
++ 	if (!file)
++ 		return -EINVAL;
++ 	return klnk_shm_present(file, gpid, pgoff, flags);
++ }
++ 
++ SYSCALL_DEFINE3(shm_rdprotect, key_t, key, unsigned long, pgoff, char __user *, buf)
++ {
++ 	struct file *file = klnk_shm_get_file(key);
++ 	if (!file)
++ 		return -EINVAL;
++ 	klnk_shm_log("key=%d, pgoff=%d", key, (int)pgoff);
++ 	return klnk_shm_rdprotect(file, pgoff, buf);
++ }
++ 
++ SYSCALL_DEFINE3(shm_wrprotect, key_t, key, unsigned long, pgoff, char __user *, buf)
++ {
++ 	struct file *file = klnk_shm_get_file(key);
++ 	if (!file)
++ 		return -EINVAL;
++ 	klnk_shm_log("key=%d, pgoff=%d", key, (int)pgoff);
++ 	return klnk_shm_wrprotect(file, pgoff, buf);
++ }
++ 
++ int klnk_shm_checkid(int *shmid)
++ {
++ 	int ret;
++ 	struct ipc_namespace *ns = current->nsproxy->ipc_ns;
++ 	struct ipc_ids *ids = &shm_ids(ns);
++ 	struct kern_ipc_perm *ipcp;
++ 	
++ 	if (!shmid || (*shmid < 0))
++ 		return -EINVAL;
++ 		
++ 	down_read(&ids->rwsem);
++ 	ipcp = ipc_findkey(ids, *shmid);
++ 	if (!ipcp) {
++ 		ret = -EINVAL;
++ 		goto out;
++ 	}
++ 	ret = *shmid;
++ 	*shmid = ipcp->id;
++ 	ipc_unlock(ipcp);
++ out:
++ 	up_read(&ids->rwsem);
++ 	return ret;
++ }
++ #endif
++ 
+  /*
+   * Fix shmaddr, allocate descriptor, map shm, add attach descriptor to lists.
+   *
+***************
+*** 1057,1063 ****
+  	struct path path;
+  	fmode_t f_mode;
+  	unsigned long populate = 0;
+! 
+  	err = -EINVAL;
+  	if (shmid < 0)
+  		goto out;
+--- 1565,1581 ----
+  	struct path path;
+  	fmode_t f_mode;
+  	unsigned long populate = 0;
+! #ifdef CONFIG_KLNK
+! 	key_t key = 0;
+! 	
+! 	if (klnk_is_global(current)) {
+! 		key = klnk_shm_checkid(&shmid);
+! 		if (key < 0) {
+! 			klnk_log("invalid key");
+! 			return -EINVAL;
+! 		}
+! 	}
+! #endif
+  	err = -EINVAL;
+  	if (shmid < 0)
+  		goto out;
+***************
+*** 1153,1159 ****
+  	sfd->ns = get_ipc_ns(ns);
+  	sfd->file = shp->shm_file;
+  	sfd->vm_ops = NULL;
+! 
+  	err = security_mmap_file(file, prot, flags);
+  	if (err)
+  		goto out_fput;
+--- 1671,1679 ----
+  	sfd->ns = get_ipc_ns(ns);
+  	sfd->file = shp->shm_file;
+  	sfd->vm_ops = NULL;
+! #ifdef CONFIG_KLNK
+! 	sfd->key = key;
+! #endif
+  	err = security_mmap_file(file, prot, flags);
+  	if (err)
+  		goto out_fput;
+diff -rc linux-3.10.63/ipc/util.c linux-3.10.63-klnk/ipc/util.c
+*** linux-3.10.63/ipc/util.c	2014-12-17 01:09:56.000000000 +0800
+--- linux-3.10.63-klnk/ipc/util.c	2014-12-23 15:13:32.000000000 +0800
+***************
+*** 202,209 ****
+   *	if not.
+   *	If key is found ipc points to the owning ipc structure
+   */
+!  
+! static struct kern_ipc_perm *ipc_findkey(struct ipc_ids *ids, key_t key)
+  {
+  	struct kern_ipc_perm *ipc;
+  	int next_id;
+--- 202,211 ----
+   *	if not.
+   *	If key is found ipc points to the owning ipc structure
+   */
+! #ifndef CONFIG_KLNK
+! static 
+! #endif 
+! struct kern_ipc_perm *ipc_findkey(struct ipc_ids *ids, key_t key)
+  {
+  	struct kern_ipc_perm *ipc;
+  	int next_id;
+diff -rc linux-3.10.63/ipc/util.h linux-3.10.63-klnk/ipc/util.h
+*** linux-3.10.63/ipc/util.h	2014-12-17 01:09:56.000000000 +0800
+--- linux-3.10.63-klnk/ipc/util.h	2014-12-23 15:14:11.000000000 +0800
+***************
+*** 15,20 ****
+--- 15,24 ----
+  
+  #define SEQ_MULTIPLIER	(IPCMNI)
+  
++ #ifdef CONFIG_KLNK
++ struct kern_ipc_perm *ipc_findkey(struct ipc_ids *ids, key_t key);
++ #endif
++ 
+  void sem_init (void);
+  void msg_init (void);
+  void shm_init (void);
+diff -rc linux-3.10.63/kernel/exit.c linux-3.10.63-klnk/kernel/exit.c
+*** linux-3.10.63/kernel/exit.c	2014-12-17 01:09:56.000000000 +0800
+--- linux-3.10.63-klnk/kernel/exit.c	2014-12-23 15:21:35.000000000 +0800
+***************
+*** 59,64 ****
+--- 59,68 ----
+  #include <asm/pgtable.h>
+  #include <asm/mmu_context.h>
+  
++ #ifdef CONFIG_KLNK
++ #include <linux/klnk.h>
++ #endif
++ 
+  static void exit_mm(struct task_struct * tsk);
+  
+  static void __unhash_process(struct task_struct *p, bool group_dead)
+***************
+*** 712,722 ****
+--- 716,743 ----
+  static inline void check_stack_usage(void) {}
+  #endif
+  
++ #ifdef CONFIG_KLNK
++ static int klnk_tsk_exit(struct task_struct *tsk)
++ {
++ 	return klnk_request(VRES_CLS_TSK, klnk_get_gpid(tsk), VRES_OP_TSKPUT, klnk_get_gpid(tsk), 0, 0, 0, 0, 0);
++ }
++ 
++ static void klnk_exit(struct task_struct *tsk) 
++ {
++ 	klnk_shm_exit(tsk);
++ 	klnk_tsk_exit(tsk);
++ }
++ #endif
++ 
+  void do_exit(long code)
+  {
+  	struct task_struct *tsk = current;
+  	int group_dead;
+  
++ #ifdef CONFIG_KLNK
++ 	if (klnk_is_global(tsk))
++ 		klnk_exit(tsk);
++ #endif
+  	profile_task_exit(tsk);
+  
+  	WARN_ON(blk_needs_flush_plug(tsk));
+diff -rc linux-3.10.63/kernel/fork.c linux-3.10.63-klnk/kernel/fork.c
+*** linux-3.10.63/kernel/fork.c	2014-12-17 01:09:56.000000000 +0800
+--- linux-3.10.63-klnk/kernel/fork.c	2014-12-23 15:17:58.000000000 +0800
+***************
+*** 84,89 ****
+--- 84,93 ----
+  #define CREATE_TRACE_POINTS
+  #include <trace/events/task.h>
+  
++ #ifdef CONFIG_KLNK
++ #include <linux/klnk.h>
++ #endif
++ 
+  /*
+   * Protected counters by write_lock_irq(&tasklist_lock)
+   */
+***************
+*** 1127,1132 ****
+--- 1131,1156 ----
+  	INIT_LIST_HEAD(&tsk->cpu_timers[2]);
+  }
+  
++ #ifdef CONFIG_KLNK
++ static int klnk_tskget(struct task_struct *tsk) 
++ {
++ 	int ret = 0;
++ 	if (klnk_can_enter(tsk)) {
++ 		size_t buflen = sizeof(int);
++ 		char *buf = klnk_malloc(buflen);
++ 		
++ 		if (!buf)
++ 			return -ENOMEM;
++ 			
++ 		ret = klnk_request(VRES_CLS_TSK, tsk->pid, VRES_OP_TSKGET, tsk->pid, 0, 0, buf, 0, buflen);
++ 		if (!ret)
++ 			klnk_set_gpid(tsk, *(int *)buf);
++ 		klnk_free(buf, buflen);
++ 	}
++ 	return ret;
++ }
++ #endif
++ 
+  /*
+   * This creates a new process as a copy of the old one,
+   * but does not actually start it yet.
+***************
+*** 1382,1387 ****
+--- 1406,1415 ----
+  	INIT_LIST_HEAD(&p->pi_state_list);
+  	p->pi_state_cache = NULL;
+  #endif
++ #ifdef CONFIG_KLNK
++ 	p->gpid = 0;
++ 	p->ckpt = NULL;
++ #endif
+  	uprobe_copy_process(p);
+  	/*
+  	 * sigaltstack should be cleared when sharing the same VM
+***************
+*** 1617,1623 ****
+  	if (!IS_ERR(p)) {
+  		struct completion vfork;
+  		struct pid *pid;
+! 
+  		trace_sched_process_fork(current, p);
+  
+  		pid = get_task_pid(p, PIDTYPE_PID);
+--- 1645,1654 ----
+  	if (!IS_ERR(p)) {
+  		struct completion vfork;
+  		struct pid *pid;
+! 		
+! #ifdef CONFIG_KLNK
+! 		klnk_tskget(p);
+! #endif
+  		trace_sched_process_fork(current, p);
+  
+  		pid = get_task_pid(p, PIDTYPE_PID);
+diff -rc linux-3.10.63/mm/memory.c linux-3.10.63-klnk/mm/memory.c
+*** linux-3.10.63/mm/memory.c	2014-12-17 01:09:56.000000000 +0800
+--- linux-3.10.63-klnk/mm/memory.c	2017-04-27 01:06:12.240021800 +0800
+***************
+*** 69,74 ****
+--- 69,78 ----
+  
+  #include "internal.h"
+  
++ #ifdef CONFIG_KLNK
++ #include <linux/klnk.h>
++ #endif
++ 
+  #ifdef LAST_NID_NOT_IN_PAGE_FLAGS
+  #warning Unfortunate NUMA and NUMA Balancing config, growing page-frame for last_nid.
+  #endif
+***************
+*** 2597,2602 ****
+--- 2601,2643 ----
+  		copy_user_highpage(dst, src, va, vma);
+  }
+  
++ #ifdef CONFIG_KLNK
++ int klnk_load_vma(struct vm_area_struct *vma)
++ {
++ 	struct file *file = vma->vm_file;
++ 	struct mm_struct *mm = vma->vm_mm;
++ 	unsigned long addr = vma->vm_start;
++ 	loff_t off = vma->vm_pgoff << PAGE_SHIFT;
++ 	
++ 	if (!klnk_is_vmap(file))
++ 		return 0;
++ 	
++ 	while (addr < vma->vm_end) {
++ 		int present = 0;
++ 		spinlock_t *ptl;
++ 		pte_t *ptep = klnk_get_pte(mm, addr, &ptl);
++ 		
++ 		if (ptep) {
++ 			if (pte_present(*ptep))
++ 				present = 1;
++ 			klnk_put_pte(ptep, ptl);
++ 		}
++ 		
++ 		if (!present) {
++ 			if (PAGE_SIZE != vfs_read(file, (void *)addr, PAGE_SIZE, &off)) {
++ 				klnk_log("failed to load memory");
++ 				return -EIO;
++ 			}
++ 		}
++ 		
++ 		addr += PAGE_SIZE;
++ 		off += PAGE_SIZE;
++ 	}
++ 	
++ 	return 0;
++ }
++ #endif
++ 
+  /*
+   * This routine handles present pages, when users try to write
+   * to a shared page. It is done by copying the page to a new address
+***************
+*** 2724,2729 ****
+--- 2765,2784 ----
+  			page_table = pte_offset_map_lock(mm, pmd, address,
+  							 &ptl);
+  			if (!pte_same(*page_table, orig_pte)) {
++ #ifdef CONFIG_KLNK
++ 				if (tmp & VM_FAULT_SYNC) {
++ 					dirty_page = old_page;
++ 					get_page(dirty_page);
++ 					entry = pte_mkdirty(pte_mkwrite(pte_mkyoung(orig_pte)));
++ 					set_pte_at(mm, address, page_table, entry);
++ 					page_add_file_rmap(dirty_page);
++ 					update_mmu_cache(vma, address, page_table);
++ 					pte_unmap_unlock(page_table, ptl);
++ 					ret |= VM_FAULT_WRITE;
++ 					page_mkwrite = 1;
++ 					goto release;
++ 				}
++ #endif
+  				unlock_page(old_page);
+  				goto unlock;
+  			}
+***************
+*** 2760,2765 ****
+--- 2815,2823 ----
+  			if (vma->vm_file)
+  				file_update_time(vma->vm_file);
+  		}
++ #ifdef CONFIG_KLNK
++ release:
++ #endif
+  		put_page(dirty_page);
+  		if (page_mkwrite) {
+  			struct address_space *mapping = dirty_page->mapping;
+***************
+*** 3372,3377 ****
+--- 3430,3439 ----
+  			copy_user_highpage(page, vmf.page, address, vma);
+  			__SetPageUptodate(page);
+  		} else {
++ #ifdef CONFIG_KLNK
++ 			if (ret & VM_FAULT_SYNC)
++ 				goto set_page_table;
++ #endif
+  			/*
+  			 * If the page will be shareable, see if the backing
+  			 * address space wants to know that the page is about
+***************
+*** 3402,3408 ****
+  		}
+  
+  	}
+! 
+  	page_table = pte_offset_map_lock(mm, pmd, address, &ptl);
+  
+  	/*
+--- 3464,3472 ----
+  		}
+  
+  	}
+! #ifdef CONFIG_KLNK
+! set_page_table:
+! #endif
+  	page_table = pte_offset_map_lock(mm, pmd, address, &ptl);
+  
+  	/*
+***************
+*** 3432,3437 ****
+--- 3496,3505 ----
+  				get_page(dirty_page);
+  			}
+  		}
++ #ifdef CONFIG_KLNK
++ 		if ((ret & VM_FAULT_SYNC) && !(flags & (FAULT_FLAG_WRITE | FAULT_FLAG_MKWRITE)))
++ 			entry = pte_wrprotect(entry);
++ #endif
+  		set_pte_at(mm, address, page_table, entry);
+  
+  		/* no need to invalidate: a not-present page won't be cached */
+diff -rc linux-3.10.63/mm/mmap.c linux-3.10.63-klnk/mm/mmap.c
+*** linux-3.10.63/mm/mmap.c	2014-12-17 01:09:56.000000000 +0800
+--- linux-3.10.63-klnk/mm/mmap.c	2014-12-23 15:36:35.000000000 +0800
+***************
+*** 44,49 ****
+--- 44,53 ----
+  
+  #include "internal.h"
+  
++ #ifdef CONFIG_KLNK
++ #include <linux/klnk.h>
++ #endif
++ 
+  #ifndef arch_mmap_check
+  #define arch_mmap_check(addr, len, flags)	(0)
+  #endif
+***************
+*** 707,712 ****
+--- 711,724 ----
+  	long adjust_next = 0;
+  	int remove_next = 0;
+  
++ #ifdef CONFIG_KLNK
++ 	if ((start < vma->vm_start) || (end > vma->vm_end)) {
++ 		if (klnk_load_vma(vma)) {
++ 			klnk_log("failed to load vma");
++ 			return -EFAULT;
++ 		}
++ 	}
++ #endif
+  	if (next && !insert) {
+  		struct vm_area_struct *exporter = NULL;
+  
+***************
+*** 2109,2114 ****
+--- 2121,2134 ----
+  	if (!(vma->vm_flags & VM_GROWSUP))
+  		return -EFAULT;
+  
++ #ifdef CONFIG_KLNK
++ 	error = klnk_load_vma(vma);
++ 	if (error) {
++ 		klnk_log("failed to load vma");
++ 		return error;
++ 	}
++ #endif
++ 
+  	/*
+  	 * We must make sure the anon_vma is allocated
+  	 * so that the anon_vma locking is not a noop.
+***************
+*** 2189,2194 ****
+--- 2209,2222 ----
+  	if (unlikely(anon_vma_prepare(vma)))
+  		return -ENOMEM;
+  
++ #ifdef CONFIG_KLNK
++ 	error = klnk_load_vma(vma);
++ 	if (error) {
++ 		klnk_log("failed to load vma");
++ 		return error;
++ 	}
++ #endif
++ 
+  	address &= PAGE_MASK;
+  	error = security_mmap_addr(address);
+  	if (error)
+diff -rc linux-3.10.63/mm/mremap.c linux-3.10.63-klnk/mm/mremap.c
+*** linux-3.10.63/mm/mremap.c	2014-12-17 01:09:56.000000000 +0800
+--- linux-3.10.63-klnk/mm/mremap.c	2014-12-23 15:38:46.000000000 +0800
+***************
+*** 27,32 ****
+--- 27,36 ----
+  
+  #include "internal.h"
+  
++ #ifdef CONFIG_KLNK
++ #include <linux/klnk.h>
++ #endif
++ 
+  static pmd_t *get_old_pmd(struct mm_struct *mm, unsigned long addr)
+  {
+  	pgd_t *pgd;
+***************
+*** 236,241 ****
+--- 240,253 ----
+  	if (mm->map_count >= sysctl_max_map_count - 3)
+  		return -ENOMEM;
+  
++ #ifdef CONFIG_KLNK
++ 	err = klnk_load_vma(vma);
++ 	if (err) {
++ 		klnk_log("failed to load vma");
++ 		return err;
++ 	}
++ #endif
++ 
+  	/*
+  	 * Advise KSM to break any KSM pages in the area to be moved:
+  	 * it would be confusing if they were to turn up at the new
+Only in linux-3.10.63-klnk/scripts: asn1_compiler
+Only in linux-3.10.63-klnk/scripts/basic: fixdep
+Only in linux-3.10.63-klnk/scripts: conmakehash
+Only in linux-3.10.63-klnk/scripts/genksyms: genksyms
+Only in linux-3.10.63-klnk/scripts/genksyms: keywords.hash.c
+Only in linux-3.10.63-klnk/scripts/genksyms: lex.lex.c
+Only in linux-3.10.63-klnk/scripts/genksyms: parse.tab.c
+Only in linux-3.10.63-klnk/scripts/genksyms: parse.tab.h
+Only in linux-3.10.63-klnk/scripts: kallsyms
+Only in linux-3.10.63-klnk/scripts/kconfig: conf
+Only in linux-3.10.63-klnk/scripts/kconfig: mconf
+Only in linux-3.10.63-klnk/scripts/kconfig: zconf.hash.c
+Only in linux-3.10.63-klnk/scripts/kconfig: zconf.lex.c
+Only in linux-3.10.63-klnk/scripts/kconfig: zconf.tab.c
+Only in linux-3.10.63-klnk/scripts/mod: devicetable-offsets.h
+Only in linux-3.10.63-klnk/scripts/mod: elfconfig.h
+Only in linux-3.10.63-klnk/scripts/mod: mk_elfconfig
+Only in linux-3.10.63-klnk/scripts/mod: modpost
+Only in linux-3.10.63-klnk/scripts: recordmcount
+Only in linux-3.10.63-klnk/scripts/selinux/genheaders: genheaders
+Only in linux-3.10.63-klnk/scripts/selinux/mdp: mdp
+Only in linux-3.10.63-klnk/scripts: sortextable
+Only in linux-3.10.63-klnk/security/tomoyo: builtin-policy.h
+Only in linux-3.10.63-klnk/security/tomoyo: policy
+Only in linux-3.10.63-klnk: .version
