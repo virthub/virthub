@@ -1,23 +1,19 @@
-# build.py
-#
-# Copyright (C) 2017 Yi-Wei Ci
-#
-# Distributed under the terms of the MIT license.
-#
-
 import os
 import sys
 import shlex
 import shutil
 import argparse
 import platform
+from commands import getoutput
 from subprocess import check_output, call
 
 _args = {}
-_dirs = ['sys', 'tools']
-_bin = {'login':'python3', 'start':'python'}
+_dirs = ['modules']
+_scripts = {'run':'python'}
+_modules = {'ckpt':'ckpt.ko', 'lbfs':'lbfs', 'klnk':'klnk', 'vmap':'vmap'}
 
 DEVNULL = open(os.devnull, 'wb')
+KERN_SRC = '/usr/src'
 
 def _get_home_dir():
     name = platform.system()
@@ -29,20 +25,22 @@ def _get_home_dir():
     d = os.path.dirname(f)
     return os.path.dirname(d)
 
-sys.path.append(os.path.join(_get_home_dir(), 'scripts'))
+_home = _get_home_dir()
+sys.path.append(os.path.join(_home, 'scripts'))
+sys.path.append(os.path.join(_home, 'conf'))
+
+from env import *
 from configure import *
 
 def _get_conf():
-    home = _get_home_dir()
-    return os.path.join(home, 'build.cfg')
+    return os.path.join(_home, 'conf', 'build.cfg')
 
 def _generate():
-    home = _get_home_dir()
-    dest = os.path.join(home, 'bin')
+    dest = os.path.join(_home, 'bin')
     if not os.path.isdir(dest):
         os.makedirs(dest, 0o755)
-    dirname = os.path.join(home, 'scripts')
-    for i in _bin:
+    dirname = os.path.join(_home, 'scripts')
+    for i in _scripts:
         path = os.path.join(dirname, "%s.py" % i)
         if not os.path.exists(path):
             raise Exception('Error: failed to find %s' % path)
@@ -50,9 +48,9 @@ def _generate():
         shutil.copyfile(path, filename)
         with open(filename) as f:
             lines = f.readlines()
-        path = check_output(['which', _bin[i]])
+        path = check_output(['which', _scripts[i]])
         if not path:
-            raise Exception('Error: failed to find %s' % _bin[i])
+            raise Exception('Error: failed to find %s' % _scripts[i])
         lines.insert(0, "#!%s\n" % path)
         with open(filename, 'w') as f:
             f.writelines(lines)
@@ -70,7 +68,7 @@ def _chkconf():
         INFO['version'] = '0.0.0'
 
     if not INFO['name']:
-        INFO['name'] = os.path.basename(_get_home_dir())
+        INFO['name'] = os.path.basename(_home)
 
 def _chktools():
     for i in DEPS:
@@ -92,6 +90,19 @@ def _chkargs():
             val = res[1].split('#')[0].strip()
             _args[key] = str(val)
 
+def _chkkern():
+    path = os.path.join(KERN_SRC, 'linux-%s' % _args['kernel'])
+    if not os.path.exists(path):
+        raise Exception('Error: failed to find %s' % path)
+    link = os.path.join(KERN_SRC, 'linux')
+    if not os.path.exists(link):
+        os.system("ln -s %s %s" % (path, link))
+    else:
+        res = getoutput('readlink -f %s' % link)
+        if res != path:
+            raise Exception('Error: the default path of linux kernel is invalid (the path %s is linked to %s)' % (res, link))
+    modules = '/lib/modules/%s/build' % _args['kernel']
+
 def _call(cmd, path=None, quiet=False, ignore=False):
     if path:
         os.chdir(path)
@@ -109,13 +120,13 @@ def _install_packages():
     for i in PIP:
         cmd = 'pip install %s --upgrade' % i
         _call(cmd)
-    path = os.path.join(_args['lxc_cache'], _args['release'])
+
+def _install_bootstrap():
+    path = PATH_LXC_ROOT
     if os.path.isdir(path):
         shutil.rmtree(path)
     os.makedirs(path, 0o755)
-
-def _install_bootstrap():
-    cmd = 'debootstrap --arch %s %s %s %s' % (_args['arch'], _args['release'], path, _args['mirror'])
+    cmd = 'debootstrap --arch %s %s %s %s' % (_args['arch'], _args['release'], path, MIRROR)
     _call(cmd)
 
 def _install():
@@ -128,11 +139,11 @@ def _configure():
     _chkargs()
     _chkconf()
     _chktools()
+    _chkkern()
 
 def _build(args=None, quiet=False):
-    home = _get_home_dir()
     for i in _dirs:
-        dirname = os.path.join(home, i)
+        dirname = os.path.join(_home, i)
         for j in os.listdir(dirname):
             path = os.path.join(dirname, j)
             if not path.startswith('.') and os.path.isdir(path):
@@ -147,6 +158,17 @@ def _build(args=None, quiet=False):
                     else:
                         _call('./build.sh %s' % args, path)
 
+def _setup():
+    paths = [PATH_BIN, PATH_RUN, PATH_VAR, PATH_INIT, PATH_MNT, PATH_CONF]
+    for path in paths:
+        os.system("mkdir -p %s" % path)
+        if path == PATH_INIT:
+            for name in _modules:
+                module = os.path.join(_home, 'modules', name, 'build', _modules[name])
+                if not os.path.exists(module):
+                    raise Exception('failed to find %s' % module)
+                shutil.copy2(module, os.path.join(path, _modules[name]))
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-c', '--clean', action='store_true')
@@ -158,3 +180,4 @@ if __name__ == '__main__':
         _configure()
         _install()
         _build()
+        _setup()
