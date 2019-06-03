@@ -23,7 +23,6 @@ vres_reply_t *vres_proc_msg(vres_req_t *req, int flags)
         log_resource_err(resource, "invalid operation, op=%d", op);
         break;
     }
-
     return NULL;
 }
 
@@ -45,7 +44,6 @@ vres_reply_t *vres_proc_sem(vres_req_t *req, int flags)
         log_resource_err(resource, "invalid operation, op=%d", op);
         break;
     }
-
     return NULL;
 }
 
@@ -64,7 +62,6 @@ vres_reply_t *vres_proc_shm(vres_req_t *req, int flags)
         log_resource_err(resource, "invalid operation, op=%d", op);
         break;
     }
-
     return NULL;
 }
 
@@ -121,22 +118,22 @@ vres_reply_t *vres_proc(vres_req_t *req, int flags)
     trace_proc(req);
     if (vres_is_sync(op))
         return vres_proc_sync(req, flags);
-
-    switch(cls) {
-    case VRES_CLS_MSG:
-        return vres_proc_msg(req, flags);
-    case VRES_CLS_SEM:
-        return vres_proc_sem(req, flags);
-    case VRES_CLS_SHM:
-        return vres_proc_shm(req, flags);
-    case VRES_CLS_TSK:
-        return vres_proc_tsk(req, flags);
-    default:
-        log_resource_err(resource, "invalid class, cls=%d", cls);
-        break;
+    else {
+        switch(cls) {
+        case VRES_CLS_MSG:
+            return vres_proc_msg(req, flags);
+        case VRES_CLS_SEM:
+            return vres_proc_sem(req, flags);
+        case VRES_CLS_SHM:
+            return vres_proc_shm(req, flags);
+        case VRES_CLS_TSK:
+            return vres_proc_tsk(req, flags);
+        default:
+            log_resource_err(resource, "invalid class, cls=%d", cls);
+            break;
+        }
+        return NULL;
     }
-
-    return NULL;
 }
 
 
@@ -172,7 +169,7 @@ int vres_proc_local(vres_arg_t *arg)
         vres_probe(resource);
         break;
     default:
-        log_resource_err(resource, "operation %d is not supported now", op);
+        log_resource_err(resource, "operation %d is not supported", op);
         return -EINVAL;
     }
     return 0;

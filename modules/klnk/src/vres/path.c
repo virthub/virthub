@@ -23,7 +23,6 @@ static inline unsigned long vres_get_queue(vres_entry_t *entry)
     default:
         queue = 0;
     }
-
     return queue;
 }
 
@@ -263,4 +262,62 @@ int vres_is_key_path(char *path)
         return 1;
     else
         return 0;
+}
+
+
+int vres_mkdir(vres_t *resource)
+{
+    int ret;
+    char path[VRES_PATH_MAX] = {0};
+
+    vres_get_root_path(resource, path);
+    if (!vres_file_is_dir(path)) {
+        ret = vres_file_mkdir(path);
+        if (ret) {
+            log_resource_err(resource, "failed to create directory");
+            return ret;
+        }
+    }
+    vres_get_cls_path(resource, path);
+    if (!vres_file_is_dir(path)) {
+        ret = vres_file_mkdir(path);
+        if (ret) {
+            log_resource_err(resource, "failed to create directory");
+            return ret;
+        }
+    }
+    vres_get_path(resource, path);
+    if (!vres_file_is_dir(path)) {
+        ret = vres_file_mkdir(path);
+        if (ret) {
+            log_resource_err(resource, "failed to create directory");
+            return ret;
+        }
+    }
+    return 0;
+}
+
+
+void vres_clear_path(vres_t *resource)
+{
+    char path[VRES_PATH_MAX] = {0};
+
+    vres_get_path(resource, path);
+    if (vres_file_is_dir(path)) {
+        if (!vres_file_is_empty_dir(path))
+            return;
+        vres_file_rmdir(path);
+    }
+    vres_get_cls_path(resource, path);
+    if (vres_file_is_dir(path)) {
+        if (!vres_file_is_empty_dir(path))
+            return;
+        vres_file_rmdir(path);
+    }
+    vres_get_root_path(resource, path);
+    if (vres_file_is_dir(path)) {
+        if (!vres_file_is_empty_dir(path))
+            return;
+        vres_file_rmdir(path);
+    }
 }

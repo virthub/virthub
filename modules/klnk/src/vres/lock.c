@@ -10,6 +10,16 @@
 int lock_stat = 0;
 vres_lock_group_t lock_group[VRES_LOCK_GROUP_SIZE];
 
+int vres_lock_compare(const void *val0, const void *val1)
+{
+    vres_lock_entry_t *ent0 = ((vres_lock_desc_t *)val0)->entry;
+    vres_lock_entry_t *ent1 = ((vres_lock_desc_t *)val1)->entry;
+    const size_t size = VRES_LOCK_ENTRY_SIZE * sizeof(vres_lock_entry_t);
+
+    return memcmp(ent0, ent1, size);
+}
+
+
 void vres_lock_init()
 {
     int i;
@@ -19,25 +29,17 @@ void vres_lock_init()
 
     for (i = 0; i < VRES_LOCK_GROUP_SIZE; i++) {
         pthread_mutex_init(&lock_group[i].mutex, NULL);
-        lock_group[i].head = rbtree_create();
+        rbtree_new(&lock_group[i].tree, vres_lock_compare);
     }
     lock_stat |= VRES_STAT_INIT;
 }
 
 
-static inline int vres_lock_compare(char *l1, char *l2)
-{
-    vres_lock_desc_t *desc1 = (vres_lock_desc_t *)l1;
-    vres_lock_desc_t *desc2 = (vres_lock_desc_t *)l2;
-
-    return memcmp(desc1->entry, desc2->entry, sizeof(((vres_lock_desc_t *)0)->entry));
-}
-
-
 static inline unsigned long vres_lock_hash(vres_lock_desc_t *desc)
 {
-    unsigned long *ent = desc->entry;
+    vres_lock_entry_t *ent = desc->entry;
 
+    assert(VRES_LOCK_ENTRY_SIZE);
     return (ent[0] ^ ent[1] ^ ent[2] ^ ent[3]) % VRES_LOCK_GROUP_SIZE;
 }
 
@@ -74,13 +76,18 @@ static inline vres_lock_t *vres_lock_alloc(vres_lock_desc_t *desc)
 
 static inline vres_lock_t *vres_lock_lookup(vres_lock_group_t *group, vres_lock_desc_t *desc)
 {
-    return rbtree_lookup(group->head, (void *)desc, vres_lock_compare);
+    rbtree_node_t *node = NULL;
+
+    if (!rbtree_find(&group->tree, desc, &node))
+        return tree_entry(node, vres_lock_t, node);
+    else
+        return NULL;
 }
 
 
 static inline void vres_lock_insert(vres_lock_group_t *group, vres_lock_t *lock)
 {
-    rbtree_insert(group->head, (void *)&lock->desc, (void *)lock, vres_lock_compare);
+    rbtree_insert(&group->tree, &lock->desc, &lock->node);
 }
 
 
@@ -112,7 +119,7 @@ out:
 
 static inline void vres_lock_free(vres_lock_group_t *group, vres_lock_t *lock)
 {
-    rbtree_delete(group->head, (void *)&lock->desc, vres_lock_compare);
+    rbtree_remove(&group->tree, &lock->desc);
     pthread_mutex_destroy(&lock->mutex);
     pthread_cond_destroy(&lock->cond);
     free(lock);
@@ -127,9 +134,8 @@ vres_lock_t *vres_lock_top(vres_t *resource)
         log_err("invalid state");
         return NULL;
     }
-
+    log_lock_top(resource);
     lock = vres_lock_get(resource);
-    lock_log(resource);
     return lock;
 }
 
@@ -138,7 +144,6 @@ void vres_unlock_top(vres_lock_t *lock)
 {
     if (lock->count > 0)
         lock->count--;
-
     pthread_mutex_unlock(&lock->mutex);
 }
 
@@ -152,13 +157,11 @@ int vres_lock_buttom(vres_lock_t *lock)
         log_err("invalid state");
         return -EINVAL;
     }
-
     list = malloc(sizeof(vres_lock_list_t));
     if (!list) {
         log_err("no memory");
         return -ENOMEM;
     }
-
     list->tid = tid;
     list_add_tail(&list->list, &lock->list);
     if (lock->count > 1) {
@@ -183,17 +186,15 @@ int vres_lock(vres_t *resource)
         log_err("invalid state");
         return -EINVAL;
     }
-
     lock = vres_lock_get(resource);
     if (!lock) {
         log_resource_err(resource, "no entry");
         return -ENOENT;
     }
-
+    log_lock(resource);
     if (lock->count > 1)
         pthread_cond_wait(&lock->cond, &lock->mutex);
     pthread_mutex_unlock(&lock->mutex);
-    lock_log(resource);
     return ret;
 }
 
@@ -207,13 +208,12 @@ int vres_lock_timeout(vres_t *resource, vres_time_t timeout)
         log_err("invalid state");
         return -EINVAL;
     }
-
     lock = vres_lock_get(resource);
     if (!lock) {
         log_resource_err(resource, "no entry");
         return -ENOENT;
     }
-
+    log_lock_timeout(resource);
     if (lock->count > 1) {
         struct timespec time;
 
@@ -223,15 +223,14 @@ int vres_lock_timeout(vres_t *resource, vres_time_t timeout)
             lock->count--;
     }
     pthread_mutex_unlock(&lock->mutex);
-    lock_log(resource);
     return ret > 0 ? -ret : ret;
 }
 
 
 void vres_unlock(vres_t *resource)
 {
-    int empty = 0;
     vres_lock_t *lock;
+    bool empty = false;
     vres_lock_desc_t desc;
     vres_lock_group_t *grp;
 
@@ -239,7 +238,6 @@ void vres_unlock(vres_t *resource)
         log_err("invalid state");
         return;
     }
-
     vres_lock_get_desc(resource, &desc);
     grp = &lock_group[vres_lock_hash(&desc)];
     pthread_mutex_lock(&grp->mutex);
@@ -248,7 +246,6 @@ void vres_unlock(vres_t *resource)
         log_resource_err(resource, "cannot find the lock");
         goto out;
     }
-
     pthread_mutex_lock(&lock->mutex);
     if (lock->count > 0) {
         lock->count--;
@@ -258,8 +255,7 @@ void vres_unlock(vres_t *resource)
             else
                 pthread_cond_broadcast(&lock->cond);
         } else
-            empty = 1;
-
+            empty = true;
         if (!list_empty(&lock->list)) {
             vres_lock_list_t *curr = list_entry(lock->list.next, vres_lock_list_t, list);
 
@@ -278,5 +274,5 @@ void vres_unlock(vres_t *resource)
         vres_lock_free(grp, lock);
 out:
     pthread_mutex_unlock(&grp->mutex);
-    lock_log(resource);
+    log_unlock(resource);
 }

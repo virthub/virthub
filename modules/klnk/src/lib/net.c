@@ -14,20 +14,18 @@ static inline int klnk_bind(struct sockaddr_in *addr)
     int fd = socket(AF_INET, SOCK_STREAM, 0);
 
     if(fd < 0) {
-        klnk_log_err("failed to create socket");
+        log_err("failed to create socket");
         return fd;
     }
-
     ret = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (char *)&optval, sizeof (optval));
     if (ret < 0) {
-        klnk_log_err("failed to set socket");
+        log_err("failed to set socket");
         goto out;
     }
-
 #ifdef SO_REUSEPORT
     ret = setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, (char *)&optval, sizeof (optval));
     if (ret < 0) {
-        klnk_log_err("failed to reuse port");
+        log_err("failed to reuse port");
         goto out;
     }
 #endif
@@ -38,7 +36,6 @@ out:
         close(fd);
         return ret;
     }
-
     return fd;
 }
 
@@ -60,15 +57,13 @@ klnk_desc_t klnk_listen(vres_addr_t address, int port)
     klnk_set_addr(address, port, &addr);
     desc = klnk_bind(&addr);
     if (desc < 0) {
-        klnk_log_err("failed to bind");
+        log_err("failed to bind");
         return -EFAULT;
     }
-
     if (listen(desc, LEN_LISTEN_QUEUE)) {
-        klnk_log_err("failed to listen");
+        log_err("failed to listen");
         return -EFAULT;
     }
-
     return desc;
 }
 
@@ -82,17 +77,15 @@ klnk_desc_t klnk_connect(vres_addr_t address, int port)
     klnk_set_addr(address, port, &addr);
     desc = socket(AF_INET, SOCK_STREAM, 0);
     if (desc < 0) {
-        klnk_log_err("no entry");
+        log_err("no entry");
         return -ENOENT;
     }
-
     ret = connect(desc, (struct sockaddr *)&addr, sizeof(struct sockaddr_in));
     if (ret < 0) {
-        klnk_log_err("failed to connect to %s, ret=%d", inet_ntoa(addr.sin_addr), ret);
+        log_err("failed to connect to %s, ret=%d", inet_ntoa(addr.sin_addr), ret);
         klnk_close(desc);
         return -EFAULT;
     }
-
     return desc;
 }
 
@@ -100,7 +93,7 @@ klnk_desc_t klnk_connect(vres_addr_t address, int port)
 int klnk_send(klnk_desc_t desc, char *buf, size_t size)
 {
     if (send(desc, buf, size, 0) != size) {
-        klnk_log_err("failed to send");
+        log_err("failed to send");
         return -EIO;
     } else
         return 0;
@@ -115,13 +108,12 @@ int klnk_recv(klnk_desc_t desc, char *buf, size_t size)
     while (len > 0) {
         ret = recv(desc, buf, len, MSG_WAITALL);
         if (ret < 0) {
-            klnk_log_err("failed to receive");
+            log_err("failed to receive");
             return ret;
         }
         len -= ret;
         buf += ret;
     }
-
     return 0;
 }
 

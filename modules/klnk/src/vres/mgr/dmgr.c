@@ -9,11 +9,11 @@
 
 int vres_dmgr_get_owner(vres_t *resource)
 {
-    return (vres_get_off(resource) % vres_nr_managers) + 1;
+    return (vres_get_off(resource) % vres_nr_managers) + 1; // the id of manager is from 1 to vres_nr_managers
 }
 
 
-int vres_dmgr_is_owner(vres_t *resource)
+bool vres_dmgr_is_owner(vres_t *resource)
 {
     return resource->owner == vres_dmgr_get_owner(resource);
 }
@@ -30,14 +30,8 @@ int vres_dmgr_get_peers(vres_t *resource, vres_page_t *page, vres_peers_t *peers
             owner = vres_dmgr_get_owner(resource);
         else
             owner = page->owner;
-
         peers->list[0] = owner;
         peers->total = 1;
-
-        if (flags & VRES_RDWR) {
-            vres_set_flags(resource, VRES_OWN);
-            vres_pg_mkown(page);
-        }
     } else {
         if (flags & VRES_RDWR) {
             int i;
@@ -50,51 +44,12 @@ int vres_dmgr_get_peers(vres_t *resource, vres_page_t *page, vres_peers_t *peers
                 }
             }
             peers->total = cnt;
-        } else
+        } else {
+            log_resource_err(resource, "invalid mode");
             return -EINVAL;
-    }
-
-    return 0;
-}
-
-
-int vres_dmgr_request_holders(vres_page_t *page, vres_req_t *req)
-{
-    int i;
-    int ret = 0;
-    int cnt = 0;
-    int nr_threads;
-    pthread_t *threads;
-    vres_t *resource = &req->resource;
-    int flags = vres_get_flags(resource);
-    vres_id_t src = vres_get_id(resource);
-
-    if (flags & VRES_RDWR)
-        nr_threads = page->nr_holders;
-    else
-        return 0;
-
-    threads = malloc(nr_threads * sizeof(pthread_t));
-    if (!threads) {
-        log_resource_err(resource, "no memory");
-        return -ENOMEM;
-    }
-
-    for (i = 0; i < page->nr_holders; i++) {
-        if ((page->holders[i] != src) && (page->holders[i] != resource->owner)) {
-            ret = klnk_io_async(resource, req->buf, req->length, NULL, 0, &page->holders[i], &threads[cnt]);
-            if (ret) {
-                log_resource_err(resource, "failed to send request");
-                break;
-            }
-            cnt++;
         }
     }
-
-    for (i = 0; i < cnt; i++)
-        pthread_join(threads[i], NULL);
-    free(threads);
-    return ret;
+    return 0;
 }
 
 
@@ -127,7 +82,10 @@ int vres_dmgr_check_resource(vres_t *resource)
     vres_get_path(resource, path);
     if (!vres_file_is_dir(path)) {
         if (VRES_CLS_SHM == resource->cls) {
-            vres_check_path(resource);
+            vres_mkdir(resource);
+#ifdef CHECK_PRIORITY
+            vres_prio_create(resource, true);
+#endif
             vres_dmgr_create(resource);
         } else
             return -ENOOWNER;
@@ -136,37 +94,24 @@ int vres_dmgr_check_resource(vres_t *resource)
 }
 
 
-void vres_dmgr_check_reply(vres_t *resource, vres_page_t *page, int total, int *head, int *tail, int *reply)
-{
-    int flags = vres_get_flags(resource);
-
-    *reply = flags & VRES_RDWR;
-    if (resource->owner == page->owner) {
-        *head = 1;
-        *tail = 1;
-    } else {
-        *head = 0;
-        *tail = 0;
-    }
-}
-
-
-int vres_dmgr_check_coverage(vres_t *resource, vres_page_t *page, int line)
-{
-    return resource->owner == page->owner;
-}
-
-
 int vres_dmgr_forward(vres_page_t *page, vres_req_t *req)
 {
-    int ret;
-    vres_shmfault_arg_t *arg = (vres_shmfault_arg_t *)req->buf;
-    int cmd = arg->cmd;
+    vres_t *resource = &req->resource;
 
-    arg->cmd = VRES_SHM_NOTIFY_OWNER;
-    ret = klnk_io_sync(&req->resource, req->buf, req->length, NULL, 0, &page->owner);
-    arg->cmd = cmd;
-    return ret;
+    if (page->owner) {
+        vres_shmfault_arg_t *arg = (vres_shmfault_arg_t *)req->buf;
+        int cmd = arg->cmd;
+        int ret;
+
+        arg->cmd = VRES_SHM_NOTIFY_OWNER;
+        ret = klnk_io_sync(resource, req->buf, req->length, NULL, 0, &page->owner);
+        arg->cmd = cmd;
+        log_dmgr_forward(resource, "forward to *%d*", page->owner);
+        return ret;
+    } else {
+        log_dmgr_forward(resource, "*cannot forward* (no owner)");
+        return -EAGAIN;
+    }
 }
 
 
@@ -175,8 +120,33 @@ int vres_dmgr_update_owner(vres_page_t *page, vres_req_t *req)
     vres_t *resource = &req->resource;
     int flags = vres_get_flags(resource);
 
-    if (flags & VRES_OWN)
+    if (flags & VRES_CHOWN) {
         page->owner = vres_get_id(resource);
+        log_dmgr_update_owner(resource, "new_owner=%d", vres_get_id(resource));
+    }
+    return 0;
+}
 
+
+bool vres_dmgr_check_sched(vres_t *resource, vres_page_t *page)
+{
+    int flags = vres_get_flags(resource);
+
+    if (vres_pg_own(page) && (vres_pg_write(page) || (flags & VRES_RDWR)))
+        return true;
+    else
+        return false;
+}
+
+
+int vres_dmgr_change_owner(vres_page_t *page, vres_req_t *req)
+{
+    vres_t *resource = &req->resource;
+    int flags = vres_get_flags(resource);
+
+    if (flags & VRES_RDWR) {
+        vres_set_flags(resource, VRES_CHOWN);
+        log_dmgr_change_owner(resource, "new_owner=%d", vres_get_id(resource));
+    }
     return 0;
 }

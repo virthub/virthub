@@ -27,7 +27,7 @@ static inline int klnk_check_address(char *addr)
     char ifname[9] = {0};
 
     if (!inet_aton(addr, &in)) {
-        klnk_log_err("invlalid address");
+        log_err("invlalid address %s", addr);
         return -EINVAL;
     }
     strcpy(master_addr, addr);
@@ -52,7 +52,7 @@ void *klnk_run(void *arg)
     klnk_desc_t srv = klnk_listen(node_addr, KLNK_PORT);
 
     if (srv < 0) {
-        klnk_log_err("failed to create server");
+        log_err("failed to create server");
         return NULL;
     }
     for (;;) {
@@ -61,7 +61,7 @@ void *klnk_run(void *arg)
         if (desc < 0)
             continue;
         if (klnk_handler_create((void *)desc)) {
-            klnk_log_err("failed to create handler");
+            log_err("failed to create handler");
             klnk_close(desc);
             break;
         }
@@ -103,7 +103,7 @@ int klnk_create_manager(vres_id_t id)
     if (ret)
         return ret;
     else
-        return vres_check_path(pres);
+        return vres_mkdir(pres);
 }
 
 
@@ -111,7 +111,7 @@ int klnk_load_managers(char *buf)
 {
     const char *name = "MANAGERS=";
 
-    if (strlen(buf) > 0 && !strncmp(buf, name, strlen(name)))    {
+    if (strlen(buf) > 0 && !strncmp(buf, name, strlen(name))) {
         int i;
         int cnt = 0;
         int start = 0;
@@ -127,42 +127,38 @@ int klnk_load_managers(char *buf)
                 if (i == length - 1)
                     n += 1;
                 if ((n > 15) || (n <= 0)) {
-                    klnk_log_err("invalid address");
+                    log_err("invalid address");
                     return -EINVAL;
                 }
                 memcpy(address, &p[start], n);
                 address[n] = '\0';
                 if (!inet_aton(address, &addr)) {
-                    klnk_log_err("invalid address");
+                    log_err("invalid address %s", address);
                     return -EINVAL;
                 }
                 start = i + 1;
                 cnt++;
             }
         }
-
         if (!cnt || (cnt > VRES_MANAGER_MAX))
             return -EINVAL;
-
         vres_managers = (vres_addr_t *)malloc(cnt * sizeof(vres_addr_t));
         if (!vres_managers) {
-            klnk_log_err("no memory");
+            log_err("no memory");
             return -ENOMEM;
         }
-
         for (i = 0, cnt = 0, start = 0; i < length; i++) {
             if ((p[i] == ',') || (i == length - 1)) {
                 int n = i - start;
 
                 if (i == length - 1)
                     n += 1;
-
                 memcpy(address, &p[start], n);
                 address[n] = '\0';
                 inet_aton(address, &vres_managers[cnt]);
                 if (vres_managers[cnt].s_addr == node_addr.s_addr) {
                     if (klnk_create_manager(cnt + 1)) {
-                        klnk_log_err("failed to create manager");
+                        log_err("failed to create manager");
                         return -EINVAL;
                     }
                 }
@@ -172,7 +168,6 @@ int klnk_load_managers(char *buf)
         }
         vres_nr_managers = cnt;
     }
-
     return 0;
 }
 
@@ -187,13 +182,13 @@ int klnk_load_conf()
         return 0;
     fp = fopen(PATH_CONF, "r");
     if (!fp) {
-        klnk_log_err("failed to open");
+        log_err("failed to open");
         return -ENOENT;
     }
     while (fscanf(fp, "%s\n", buf) != EOF) {
         ret = klnk_load_managers(buf);
         if (ret) {
-            klnk_log_err("failed to load managers");
+            log_err("failed to get managers");
             break;
         }
     }
@@ -208,19 +203,19 @@ static inline int klnk_init(char *addr)
 
     ret = klnk_check_address(addr);
     if (ret) {
-        klnk_log_err("failed to check address");
+        log_err("failed to check address");
         return ret;
     }
     ret = klnk_create();
     if (ret) {
-        klnk_log_err("failed to create");
+        log_err("failed to create");
         return ret;
     }
     klnk_mutex_init();
     vres_init();
     ret = klnk_load_conf();
     if (ret) {
-        klnk_log_err("failed to load conf");
+        log_err("failed to load conf");
         return ret;
     }
     return 0;
@@ -242,40 +237,67 @@ int klnk_getattr(const char *path, struct stat *stbuf)
 }
 
 
+inline bool klnk_check_bypass(vres_t *resource)
+{
+    switch (vres_get_op(resource)) {
+#ifdef DISABLE_PGSAVE
+    case VRES_OP_PGSAVE:
+        return true;
+#endif
+#ifdef DISABLE_TSKPUT
+    case VRES_OP_TSKPUT:
+        return true;
+#endif
+    default:
+        return false;
+    }
+}
+
+
 int klnk_open(const char *path, struct fuse_file_info *fi)
 {
-    int ret;
+    int ret = 0;
     vres_arg_t arg;
     vres_t resource;
     size_t inlen = 0;
     size_t outlen = 0;
     unsigned long addr;
+    vres_arg_t *parg = &arg;
+    vres_t *pres = &resource;
 
-    log_klnk_open("start, path=%s", path);
-    ret = vres_parse(path, &resource, &addr, &inlen, &outlen);
+    ret = vres_parse(path, pres, &addr, &inlen, &outlen);
     if (ret) {
-        klnk_log_err("failed to get resource");
+        log_err("failed to get resource");
         goto err;
     }
-    vres_barrier_wait_timeout(&resource, VRES_BARRIER_TIMEOUT);
-    klnk_mutex_lock(&resource);
-    ret = vres_rpc_get(&resource, addr, inlen, outlen, &arg);
-    if (-EAGAIN == ret)
+    if (klnk_check_bypass(pres)) {
+        log_klnk_open(pres, "bypass (op=%s)", log_get_op(vres_get_op(pres)));
+        assert(!vres_can_expose(pres));
+        return -EOK;
+    }
+    log_klnk_open(pres, ">-- open (begin) --<");
+    vres_barrier_wait_timeout(pres, VRES_BARRIER_TIMEOUT);
+    klnk_mutex_lock(pres);
+    ret = vres_rpc_get(pres, addr, inlen, outlen, parg);
+    if (-EAGAIN == ret) {
+        log_resource_warning(pres, "waiting");
         goto wait;
-    else if (ret)
+    } else if (ret)
         goto out;
-    ret = vres_rpc(&arg);
-    if (ret)
+    ret = vres_rpc(parg);
+    if (ret) {
+        log_resource_err(pres, "failed to invoke rpc, ret=%s", log_get_err(ret));
         goto out;
+    }
 wait:
-    ret = vres_rpc_wait(&arg);
-    vres_rpc_put(&arg);
+    ret = vres_rpc_wait(parg);
+    vres_rpc_put(parg);
 out:
-    klnk_mutex_unlock(&resource);
+    klnk_mutex_unlock(pres);
 err:
-    if (!vres_can_expose(&resource))
+    if (!vres_can_expose(pres))
         ret = ret ? ret : -EOK;
-    log_klnk_open("finished, path=%s, ret=%d", path, ret);
+    log_klnk_open(pres, ">-- open (end, ret=%s) --<", log_get_err(ret));
     return ret;
 }
 
@@ -289,8 +311,8 @@ static struct fuse_operations klnk_oper = {
 void usage()
 {
     printf("usage: klnk [address] [mountpoint]\n");
-    printf("address: the IP address of master\n");
-    printf("mountpoint: a mount point folder to klnk\n");
+    printf("  address: the IP address of master\n");
+    printf("  mountpoint: the path used for mounting the klnk file system\n");
 }
 
 
@@ -308,11 +330,11 @@ int main(int argc, char *argv[])
         log_ln("failed to initialize");
         return -1;
     }
-    log_ln("node=%s", node_name);
-    log_ln("master=%s", master_addr);
-    log_ln("mount=%s", argv[2]);
+    log_ln("node    : %s", node_name);
+    log_ln("master  : %s", master_addr);
+    log_ln("mount   : %s", argv[2]);
 #ifdef UNSHARE
-    log_ln("unshare=1");
+    log_ln("unshare : 1");
     if (unshare(CLONE_NEWIPC) != 0) {
         log_ln("failed to unshare");
         return -1;

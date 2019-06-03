@@ -12,8 +12,11 @@
 
 #ifdef SHOW_NODE
 #define LOG_NODE_LIST
-// #define LOG_NODE_INIT
-//#define LOG_NODE_UPDATE
+
+#ifdef SHOW_MORE
+#define LOG_NODE_INIT
+#define LOG_NODE_UPDATE
+#endif
 #endif
 
 #include "log_node.h"

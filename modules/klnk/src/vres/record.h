@@ -24,12 +24,12 @@ typedef struct vres_record {
     vres_req_t *req;
 } vres_record_t;
 
-int vres_record_is_empty(char *path);
-int vres_record_first(char *path, vres_index_t *index);
+int vres_record_empty_check(char *path);
+void vres_record_put(vres_record_t *record);
 int vres_record_next(char *path, vres_index_t *index);
+int vres_record_first(char *path, vres_index_t *index);
 int vres_record_remove(char *path, vres_index_t index);
 int vres_record_save(char *path, vres_req_t *req, vres_index_t *index);
 int vres_record_get(char *path, vres_index_t index, vres_record_t *record);
-void vres_record_put(vres_record_t *record);
 
 #endif

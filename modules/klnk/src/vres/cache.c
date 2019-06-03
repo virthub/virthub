@@ -10,6 +10,25 @@
 int cache_stat = 0;
 vres_cache_group_t cache_group[VRES_CACHE_GROUP_SIZE];
 
+int vres_cache_compare(const void *val0, const void *val1)
+{
+    vres_cache_entry_t *ent0 = ((vres_cache_desc_t *)val0)->entry;
+    vres_cache_entry_t *ent1 = ((vres_cache_desc_t *)val1)->entry;
+
+    if (ent0[0] > ent1[0])
+        return 1;
+    else if (ent0[0] == ent1[0]) {
+        if (ent0[1] > ent1[1])
+            return 1;
+        else if (ent0[1] == ent1[1])
+            return 0;
+        else
+            return -1;
+    } else
+        return -1;
+}
+
+
 void vres_cache_init()
 {
     int i;
@@ -18,8 +37,8 @@ void vres_cache_init()
         return;
 
     for (i = 0; i < VRES_CACHE_GROUP_SIZE; i++) {
+        rbtree_new(&cache_group[i].tree, vres_cache_compare);
         pthread_mutex_init(&cache_group[i].mutex, NULL);
-        cache_group[i].head = rbtree_create();
         INIT_LIST_HEAD(&cache_group[i].list);
         cache_group[i].count = 0;
     }
@@ -27,19 +46,11 @@ void vres_cache_init()
 }
 
 
-static inline int vres_cache_compare(char *c1, char *c2)
-{
-    vres_cache_desc_t *desc1 = (vres_cache_desc_t *)c1;
-    vres_cache_desc_t *desc2 = (vres_cache_desc_t *)c2;
-
-    return memcmp(desc1->entry, desc2->entry, sizeof(((vres_cache_desc_t *)0)->entry));
-}
-
-
 static inline unsigned long vres_cache_hash(vres_cache_desc_t *desc)
 {
-    unsigned long *ent = desc->entry;
+    vres_cache_entry_t *ent = desc->entry;
 
+    assert(VRES_CACHE_ENTRY_SIZE == 2);
     return (ent[0] ^ ent[1]) % VRES_CACHE_GROUP_SIZE;
 }
 
@@ -61,13 +72,11 @@ static inline vres_cache_t *vres_cache_alloc(vres_cache_desc_t *desc, size_t len
     cache = (vres_cache_t *)malloc(sizeof(vres_cache_t));
     if (!cache)
         return NULL;
-
     cache->buf = malloc(len);
     if (!cache->buf) {
         free(cache);
         return NULL;
     }
-
     cache->len = len;
     INIT_LIST_HEAD(&cache->list);
     memcpy(&cache->desc, desc, sizeof(vres_cache_desc_t));
@@ -77,13 +86,18 @@ static inline vres_cache_t *vres_cache_alloc(vres_cache_desc_t *desc, size_t len
 
 static inline vres_cache_t *vres_cache_lookup(vres_cache_group_t *group, vres_cache_desc_t *desc)
 {
-    return rbtree_lookup(group->head, desc, vres_cache_compare);
+    rbtree_node_t *node = NULL;
+
+    if (!rbtree_find(&group->tree, desc, &node))
+        return tree_entry(node, vres_cache_t, node);
+    else
+        return NULL;
 }
 
 
 static inline void vres_cache_free(vres_cache_group_t *group, vres_cache_t *cache)
 {
-    rbtree_delete(group->head, (void *)&cache->desc, vres_cache_compare);
+    rbtree_remove(&group->tree, &cache->desc);
     list_del(&cache->list);
     free(cache->buf);
     free(cache);
@@ -93,7 +107,7 @@ static inline void vres_cache_free(vres_cache_group_t *group, vres_cache_t *cach
 
 static inline void vres_cache_insert(vres_cache_group_t *group, vres_cache_t *cache)
 {
-    rbtree_insert(group->head, &cache->desc, (void *)cache, vres_cache_compare);
+    rbtree_insert(&group->tree, &cache->desc, &cache->node);
     list_add(&cache->list, &group->list);
     group->count++;
 }
@@ -107,7 +121,6 @@ int vres_cache_realloc(vres_cache_t *cache, size_t len)
             return -EINVAL;
         cache->len = len;
     }
-
     return 0;
 }
 
@@ -121,7 +134,6 @@ int vres_cache_write(vres_t *resource, char *buf, size_t len)
 
     if (!(cache_stat & VRES_STAT_INIT))
         return -EINVAL;
-
     vres_cache_get_desc(resource, &desc);
     grp = &cache_group[vres_cache_hash(&desc)];
     pthread_mutex_lock(&grp->mutex);
@@ -133,9 +145,9 @@ int vres_cache_write(vres_t *resource, char *buf, size_t len)
             ret = -ENOMEM;
             goto out;
         }
-        vres_cache_insert(grp, cache);
         if (VRES_CACHE_QUEUE_SIZE == grp->count)
             vres_cache_free(grp, list_entry(grp->list.prev, vres_cache_t, list));
+        vres_cache_insert(grp, cache);
     } else {
         ret = vres_cache_realloc(cache, len);
         if (ret) {
@@ -168,7 +180,6 @@ int vres_cache_read(vres_t *resource, char *buf, size_t len)
         ret = -ENOENT;
         goto out;
     }
-
     if (len > cache->len) {
         ret = -EINVAL;
         goto out;
@@ -209,7 +220,6 @@ void vres_cache_release()
 
     if (!(cache_stat & VRES_STAT_INIT))
         return;
-
     for (i = 0; i < VRES_CACHE_GROUP_SIZE; i++) {
         pthread_mutex_lock(&grp->mutex);
         for (j = 0; j < grp->count; j++)

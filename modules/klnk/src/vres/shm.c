@@ -7,23 +7,9 @@
 
 #include "shm.h"
 
-#ifdef NO_MANAGER
-#ifdef STATIC_MANAGER
-#undef STATIC_MANAGER
-#endif
-#ifdef DYNAMIC_MANAGER
-#undef DYNAMIC_MANAGER
-#endif
-#endif
-
-#ifdef STATIC_MANAGER
+#if MANAGER_TYPE == STATIC_MANAGER
 #include "mgr/smgr.h"
-#ifdef DYNAMIC_MANAGER
-#undef DYNAMIC_MANAGER
-#endif
-#endif
-
-#ifdef DYNAMIC_MANAGER
+#elif MANAGER_TYPE == DYNAMIC_MANAGER
 #include "mgr/dmgr.h"
 #endif
 
@@ -53,12 +39,12 @@ static inline int vres_shm_calc_htab(int *htab, size_t length, int nr_holders)
 void vres_shm_init_htab()
 {
     int i;
-    static int init = 0;
+    static bool init = false;
 
     if (init)
         return;
     else
-        init = 1;
+        init = true;
     for (i = 0; i < VRES_PAGE_NR_HOLDERS; i++)
         vres_shm_calc_htab(vres_shm_htab[i], VRES_LINE_MAX, i + 1);
 }
@@ -66,26 +52,28 @@ void vres_shm_init_htab()
 
 int vres_shm_check(vres_t *resource, struct shmid_ds *shp)
 {
-    int ret = 0;
     vres_file_t *filp;
     char path[VRES_PATH_MAX];
 
     vres_get_state_path(resource, path);
     filp = vres_file_open(path, "r");
-    if (!filp)
+    if (filp) {
+        int ret = 0;
+
+        if (vres_file_read(shp, sizeof(struct shmid_ds), 1, filp) != 1)
+            ret = -EIO;
+        vres_file_close(filp);
+        return ret;
+    } else
         return -ENOENT;
-    if (vres_file_read(shp, sizeof(struct shmid_ds), 1, filp) != 1)
-        ret = -EIO;
-    vres_file_close(filp);
-    return ret;
 }
 
 
-int vres_shm_is_owner(vres_t *resource)
+bool vres_shm_is_owner(vres_t *resource)
 {
-#if defined(STATIC_MANAGER)
+#if MANAGER_TYPE == STATIC_MANAGER
     return vres_smgr_is_owner(resource);
-#elif defined(DYNAMIC_MANAGER)
+#elif MANAGER_TYPE == DYNAMIC_MANAGER
     return vres_dmgr_is_owner(resource);
 #else
     return vres_is_owner(resource);
@@ -96,27 +84,13 @@ int vres_shm_is_owner(vres_t *resource)
 int vres_shm_init(vres_t *resource)
 {
     int ret = 0;
-#ifdef CHECK_PRIORITY
-    vres_time_t off = 0;
-#endif
+
     vres_shm_init_htab();
 #ifdef CHECK_PRIORITY
-    if (!vres_is_owner(resource)) {
-        vres_time_t time;
-        vres_time_t start = vres_get_time();
-
-        ret = vres_sync_request(resource, &time);
-        if (ret) {
-            log_resource_err(resource, "failed to sync time");
-            return ret;
-        }
-        off = vres_get_time_offset(start, time);
-    }
-    ret = vres_prio_create(resource, off);
-    if (ret) {
-        log_resource_err(resource, "failed to create prio");
-        return ret;
-    }
+    if (!vres_is_owner(resource))
+        ret = vres_prio_create(resource, true);
+    else
+        ret = vres_prio_create(resource, false);
 #endif
     return ret;
 }
@@ -131,7 +105,6 @@ int vres_shm_create(vres_t *resource)
 
     if ((size < VRES_SHMMIN) || (size > VRES_SHMMAX))
         return -EINVAL;
-
     memset(&shmid_ds, 0, sizeof(struct shmid_ds));
     shmid_ds.shm_perm.__key = resource->key;
     shmid_ds.shm_perm.mode = vres_get_flags(resource) & S_IRWXUGO;
@@ -260,15 +233,12 @@ static inline int vres_shm_get_peer_info(vres_t *resource, vres_page_t *page, vr
     } else if (flags & VRES_RDONLY) {
         int i;
 
-        for (i = 0; i < page->nr_holders; i++) {
-            int ret = vres_get_peer(page->holders[i], &info->list[i]);
-
-            if (ret)
-                return ret;
-        }
+        for (i = 0; i < page->nr_holders; i++)
+            info->list[i] = page->holders[i];
         info->total = page->nr_holders;
     }
-    return vres_get_peer(page->owner, &info->owner);
+    log_shm_get_peer_info(resource, info);
+    return 0;
 }
 
 
@@ -281,7 +251,6 @@ static inline int vres_shm_get_peer_info_fast(vres_t *resource, vres_page_t *pag
     if (!ret && (flags & VRES_RDWR))
         if (!vres_page_search_holder_list(resource, page, resource->owner))
             info->total++;
-
     return ret;
 }
 
@@ -289,7 +258,7 @@ static inline int vres_shm_get_peer_info_fast(vres_t *resource, vres_page_t *pag
 static inline int vres_shm_cache_add(vres_page_t *page, vres_req_t *req)
 {
     int ret = 0;
-    int updated = 0;
+    bool update = false;
     vres_file_entry_t *entry;
     char path[VRES_PATH_MAX];
     vres_t *resource = &req->resource;
@@ -309,7 +278,7 @@ static inline int vres_shm_cache_add(vres_page_t *page, vres_req_t *req)
 
             for (i = 0; i < total; i++) {
                 if (caches[i].id == id) {
-                    updated = 1;
+                    update = true;
                     caches[i].index = index;
                     caches[i].version = version;
                     break;
@@ -317,7 +286,7 @@ static inline int vres_shm_cache_add(vres_page_t *page, vres_req_t *req)
             }
         }
     }
-    if (!updated) {
+    if (!update) {
         vres_shm_cache_t cache;
 
         if (!entry) {
@@ -338,34 +307,35 @@ static inline int vres_shm_cache_add(vres_page_t *page, vres_req_t *req)
 }
 
 
-static inline int vres_shm_cache_check(vres_page_t *page, vres_req_t *req)
+static inline bool vres_shm_check_request(vres_page_t *page, vres_req_t *req)
 {
-    int i;
-    int total;
-    int ret = 0;
-    vres_file_entry_t *entry;
+    bool ret = false;
     char path[VRES_PATH_MAX];
-    vres_shm_cache_t *caches;
+    vres_file_entry_t *entry;
     vres_t *resource = &req->resource;
-    vres_id_t id = vres_get_id(resource);
-    vres_version_t version = page->version;
-    vres_shmfault_arg_t *arg = (vres_shmfault_arg_t *)req->buf;
-    vres_index_t index = arg->index;
 
     vres_get_cache_path(resource, path);
     entry = vres_file_get_entry(path, 0, FILE_RDONLY);
-    if (!entry)
-        return 0;
-    caches = vres_file_get_desc(entry, vres_shm_cache_t);
-    total = vres_file_items_count(entry, sizeof(vres_shm_cache_t));
-    for (i = 0; i < total; i++) {
-        if ((caches[i].id == id) && (caches[i].index == index) && (caches[i].version >= version)) {
-            log_shm_cache(resource, id, index, caches[i].version);
-            ret = 1;
-            break;
+    if (entry) {
+        int i;
+        int total;
+        vres_shm_cache_t *caches;
+        vres_id_t id = vres_get_id(resource);
+        vres_version_t version = page->version;
+        vres_shmfault_arg_t *arg = (vres_shmfault_arg_t *)req->buf;
+        vres_index_t index = arg->index;
+
+        caches = vres_file_get_desc(entry, vres_shm_cache_t);
+        total = vres_file_items_count(entry, sizeof(vres_shm_cache_t));
+        for (i = 0; i < total; i++) {
+            if ((caches[i].id == id) && (caches[i].index == index) && (caches[i].version >= version)) {
+                log_shm_cache(resource, id, index, caches[i].version);
+                ret = true;
+                break;
+            }
         }
+        vres_file_put_entry(entry);
     }
-    vres_file_put_entry(entry);
     return ret;
 }
 
@@ -471,7 +441,7 @@ int vres_shm_fast_reply(vres_page_t *page, vres_req_t *req)
         if (tail) {
             size += sizeof(vres_shm_peer_info_t);
             if (flags & VRES_RDONLY)
-                size += page->nr_holders * sizeof(vres_desc_t);
+                size += page->nr_holders * sizeof(vres_id_t);
         }
         new_arg = (vres_shm_notify_proposer_arg_t *)calloc(1, size);
         if (!new_arg) {
@@ -510,7 +480,7 @@ int vres_shm_fast_reply(vres_page_t *page, vres_req_t *req)
                 goto out;
             }
             new_arg->arg.owner = page->owner;
-            vres_set_flags(&res, VRES_PEER);
+            vres_set_flags(&res, VRES_CRIT);
         }
         if (klnk_io_sync(&res, (char *)new_arg, size, NULL, 0, &src)) {
             log_resource_err(resource, "failed to send request");
@@ -576,19 +546,35 @@ int vres_shm_request_holders(vres_page_t *page, vres_req_t *req)
         log_resource_err(resource, "invalid request length");
         return -EINVAL;
     }
-    // The clk piggybacked on req has to be updated.
+    // Note that the clk piggybacked on req must be updated.
     arg->clk = page->clk;
     arg->owner = resource->owner;
     arg->cmd = VRES_SHM_NOTIFY_HOLDER;
-#if defined(STATIC_MANAGER)
-    ret = vres_smgr_request_holders(page, req);
-#elif defined(DYNAMIC_MANAGER)
-    ret = vres_dmgr_request_holders(page, req);
-#else
     ret = vres_shm_do_request_holders(page, req);
-#endif
     arg->cmd = cmd;
     return ret;
+}
+
+
+static inline void vres_shm_do_detect_owner(vres_page_t *page, vres_req_t *req)
+{
+    vres_t *resource = &req->resource;
+    int flags = vres_get_flags(resource);
+
+    if (!(flags & VRES_CHOWN) && !vres_pg_own(page)) {
+        vres_shmfault_arg_t *arg = (vres_shmfault_arg_t *)req->buf;
+
+        page->owner = arg->owner;
+        log_shm_owner(resource, "new_owner=%d", arg->owner);
+    }
+}
+
+
+static inline void vres_shm_detect_owner(vres_page_t *page, vres_req_t *req)
+{
+#if (MANAGER_TYPE == NO_MANAGER) && defined(DYNAMIC_OWNER)
+    vres_shm_do_detect_owner(page, req);
+#endif
 }
 
 
@@ -617,25 +603,19 @@ int vres_shm_update_holder(vres_page_t *page, vres_req_t *req)
             page->clk += 1;
         }
     }
-
     if (!vres_pg_pgsave(page))
         if (vres_page_protect(resource, page))
             log_resource_warning(resource, "failed to protect");
-
-    if (flags & VRES_OWN) {
+    if (flags & VRES_CHOWN) {
         if (vres_pg_own(page)) {
             vres_pg_clrown(page);
             if (!vres_pg_active(page))
                 vres_page_clear_holder_list(resource, page);
         }
         page->owner = src;
+        log_shm_owner(resource, "new_owner=%d", src);
     }
-#if defined(DYNAMIC_OWNER)
-    else if (!vres_pg_own(page)) {
-        vres_shmfault_arg_t *arg = (vres_shmfault_arg_t *)req->buf;
-        page->owner = arg->owner;
-    }
-#endif
+    vres_shm_detect_owner(page, req);
     log_shm_update_holder(resource, page);
     return 0;
 }
@@ -652,7 +632,6 @@ int vres_shm_request_silent_holders(vres_page_t *page, vres_req_t *req)
         log_resource_err(resource, "invalid request length");
         return -EINVAL;
     }
-
     if ((flags & VRES_RDWR) && !vres_shm_is_silent_holder(page) && vres_pg_active(page)) {
         if (page->nr_silent_holders > 0) {
             int i;
@@ -713,7 +692,6 @@ int vres_shm_request_silent_holders(vres_page_t *page, vres_req_t *req)
             }
             for (i = 0; i < count; i++)
                 pthread_join(thread[i], NULL);
-
             arg->cmd = cmd;
             free(thread);
 out:
@@ -739,22 +717,19 @@ int vres_shm_do_check_coverage(vres_page_t *page, int line)
 
 int vres_shm_check_coverage(vres_t *resource, vres_page_t *page, int line)
 {
-#if defined(STATIC_MANAGER)
-    return vres_smgr_check_coverage(resource, page, line);
-#elif defined(DYNAMIC_MANAGER)
-    return vres_dmgr_check_coverage(resource, page, line);
-#else
     return vres_shm_do_check_coverage(page, line);
-#endif
 }
 
 
-void vres_shm_do_check_reply(vres_t *resource, vres_page_t *page, int total, int *head, int *tail, int *reply)
+void vres_shm_do_check_reply(vres_t *resource, vres_page_t *page, int total, bool *head, bool *tail, bool *reply)
 {
     int flags = vres_get_flags(resource);
     vres_id_t src = vres_get_id(resource);
 
-    *reply = flags & VRES_RDWR;
+    if (flags & VRES_RDWR)
+        *reply = true;
+    else
+        *reply = false;
     if (src != page->owner) {
         if (!total) {
             if (page->holders[0] != src)
@@ -772,15 +747,10 @@ void vres_shm_do_check_reply(vres_t *resource, vres_page_t *page, int total, int
 }
 
 
-void vres_shm_check_reply(vres_t *resource, vres_page_t *page, int total, int *head, int *tail, int *reply)
+void vres_shm_check_reply(vres_t *resource, vres_page_t *page, int total, bool *head, bool *tail, bool *reply)
 {
-#if defined(STATIC_MANAGER)
-    vres_smgr_check_reply(resource, page, total, head, tail, reply);
-#elif defined(DYNAMIC_MANAGER)
-    vres_dmgr_check_reply(resource, page, total, head, tail, reply);
-#else
     vres_shm_do_check_reply(resource, page, total, head, tail, reply);
-#endif
+    log_shm_check_reply(resource, total, head, tail, reply);
 }
 
 
@@ -788,11 +758,11 @@ int vres_shm_do_check_holder(vres_page_t *page, vres_req_t *req)
 {
     int i;
     int ret = 0;
-    int tail = 0;
-    int head = 0;
     int total = 0;
-    int reply = 0;
     int nr_lines = 0;
+    bool tail = false;
+    bool head = false;
+    bool reply = false;
     int diff[VRES_LINE_MAX];
     vres_t *resource = &req->resource;
     int flags = vres_get_flags(resource);
@@ -810,14 +780,13 @@ int vres_shm_do_check_holder(vres_page_t *page, vres_req_t *req)
         log_resource_err(resource, "failed to differentiate (page->version=%d, arg->version=%d)", (int)page->version, (int)arg->version);
         return -EFAULT;
     }
-
     for (i = 0; i < VRES_LINE_MAX; i++) {
         if (diff[i] != 0) {
             total++;
             if (vres_shm_check_coverage(resource, page, i)) {
                 nr_lines++;
                 if (1 == total)
-                    head = 1;
+                    head = true;
             }
         }
     }
@@ -833,7 +802,7 @@ int vres_shm_do_check_holder(vres_page_t *page, vres_req_t *req)
         if (tail) {
             size += sizeof(vres_shm_peer_info_t);
             if (flags & VRES_RDONLY)
-                size += page->nr_holders * sizeof(vres_desc_t);
+                size += page->nr_holders * sizeof(vres_id_t);
         }
         new_arg = (vres_shm_notify_proposer_arg_t *)calloc(1, size);
         if (!new_arg) {
@@ -872,7 +841,7 @@ int vres_shm_do_check_holder(vres_page_t *page, vres_req_t *req)
                 goto out;
             }
             new_arg->arg.owner = page->owner;
-            vres_set_flags(&res, VRES_PEER);
+            vres_set_flags(&res, VRES_CRIT);
         }
         if (klnk_io_sync(&res, (char *)new_arg, size, NULL, 0, &src)) {
             log_resource_err(resource, "failed to send request");
@@ -882,22 +851,43 @@ out:
         log_lines(resource, new_arg->lines, nr_lines, total);
         free(new_arg);
     }
-
     return ret;
 }
 
 
-#ifdef CHECK_PRIORITY
-static inline bool vres_shm_need_priority(vres_t *resource, vres_page_t *page)
+static inline bool vres_shm_check_sched(vres_t *resource, vres_page_t *page)
 {
     int flags = vres_get_flags(resource);
 
-    if (vres_pg_own(page) && !(flags & VRES_OWN) && (vres_pg_write(page) || (flags & VRES_RDWR)))
+    if (vres_pg_own(page) && !(flags & VRES_CHOWN) && (vres_pg_write(page) || (flags & VRES_RDWR)))
         return true;
     else
         return false;
 }
+
+
+static inline bool vres_shm_is_scheduler(vres_t *resource, vres_page_t *page)
+{
+#if MANAGER_TYPE == DYNAMIC_MANAGER
+    return vres_dmgr_check_sched(resource, page);
+#elif MANAGER_TYPE == STATIC_MANAGER
+    return vres_smgr_check_sched(resource, page);
+#elif (MANAGER_TYPE == NO_MANAGER) && defined(DYNAMIC_OWNER)
+    return vres_shm_check_sched(resource, page);
+#else
+    return false;
 #endif
+}
+
+
+static inline bool vres_shm_need_priority(vres_t *resource, vres_page_t *page)
+{
+#ifdef CHECK_PRIORITY
+    return vres_shm_is_scheduler(resource, page);
+#else
+    return false;
+#endif
+}
 
 
 int vres_shm_update_owner(vres_page_t *page, vres_req_t *req)
@@ -913,9 +903,8 @@ int vres_shm_update_owner(vres_page_t *page, vres_req_t *req)
 int vres_shm_do_check_owner(vres_page_t *page, vres_req_t *req)
 {
     int ret = 0;
+    bool need_priority = false;
     vres_t *resource = &req->resource;
-#ifdef CHECK_PRIORITY
-    int need_priority = 0;
 
     if (vres_shm_need_priority(resource, page)) {
         ret = vres_prio_set_busy(resource);
@@ -923,9 +912,8 @@ int vres_shm_do_check_owner(vres_page_t *page, vres_req_t *req)
             log_resource_err(resource, "failed to update priority");
             return ret;
         }
-        need_priority = 1;
+        need_priority = true;
     }
-#endif
     if (vres_pg_own(page)) {
         ret = vres_shm_request_holders(page, req);
         if (ret)
@@ -955,7 +943,6 @@ int vres_shm_do_check_owner(vres_page_t *page, vres_req_t *req)
             return ret;
         }
     }
-#ifdef CHECK_PRIORITY
     if (need_priority) {
         ret = vres_prio_set_idle(resource);
         if (ret) {
@@ -963,7 +950,6 @@ int vres_shm_do_check_owner(vres_page_t *page, vres_req_t *req)
             return ret;
         }
     }
-#endif
     return -EAGAIN == ret ? 0 : ret;
 }
 
@@ -976,7 +962,6 @@ void vres_shm_clear_updates(vres_t *resource, vres_page_t *page)
     page->count = 0;
     if (!vres_pg_update(page))
         return;
-
     vres_get_update_path(resource, path);
     filp = vres_file_open(path, "r+");
     if (filp) {
@@ -1019,7 +1004,6 @@ int vres_shm_save_updates(vres_t *resource, vres_page_t *page, vres_line_t *line
     for (i = 0; i < VRES_LINE_MAX; i++)
         if (page->collect[i])
             ret++;
-
     vres_pg_mkupdate(page);
     log_shm_save_updates(resource, nr_lines);
     return ret;
@@ -1053,56 +1037,62 @@ void vres_shm_load_updates(vres_t *resource, vres_page_t *page)
 }
 
 
-#ifdef DYNAMIC_OWNER
 int vres_shm_do_change_owner(vres_page_t *page, vres_req_t *req)
 {
-    int ret;
-    int update = 0;
-    int active = 0;
-    vres_member_t member;
-    vres_t *resource = &req->resource;
-    int flags = vres_get_flags(resource);
-    vres_id_t src = vres_get_id(resource);
+    if (vres_pg_own(page)) {
+        vres_t *resource = &req->resource;
 
-    ret = vres_member_lookup(resource, &member, &active);
-    if (ret) {
-        log_resource_err(resource, "invalid member");
-        return ret;
-    }
-    if (((flags & VRES_RDWR) || (page->nr_holders < VRES_PAGE_NR_HOLDERS))
-        && ((member.count > 0) || (active < VRES_SHM_NR_AREAS - 1))) {
-        if (VRES_SHM_NR_VISITS > 0) {
-            int i;
-            int total = page->nr_candidates;
-            vres_member_t *cand = page->candidates;
+        if (vres_shm_is_owner(resource)) {
+            int ret;
+            int active = 0;
+            bool chown = false;
+            vres_member_t member;
+            int flags = vres_get_flags(resource);
+            vres_id_t src = vres_get_id(resource);
 
-            for (i = 0; i < total; i++) {
-                if (cand[i].id == src) {
-                    if (cand[i].count >= VRES_SHM_NR_VISITS)
-                        update = 1;
-                    break;
-                }
+            ret = vres_member_lookup(resource, &member, &active);
+            if (ret) {
+                log_resource_err(resource, "invalid member");
+                return ret;
             }
-        } else
-            update = 1;
-    }
-    if (update) {
-        member.count++;
-        ret = vres_member_update(resource, &member);
-        if (ret) {
-            log_resource_err(resource, "failed to update member");
-            return ret;
+            if (((flags & VRES_RDWR) || (page->nr_holders < VRES_PAGE_NR_HOLDERS))
+                && ((member.count > 0) || (active < VRES_SHM_NR_AREAS - 1))) {
+                if (VRES_SHM_NR_VISITS > 0) {
+                    int i;
+                    int total = page->nr_candidates;
+                    vres_member_t *cand = page->candidates;
+
+                    for (i = 0; i < total; i++) {
+                        if (cand[i].id == src) {
+                            if (cand[i].count >= VRES_SHM_NR_VISITS)
+                                chown = true;
+                            break;
+                        }
+                    }
+                } else
+                    chown = true;
+            }
+            if (chown) {
+                member.count++;
+                ret = vres_member_update(resource, &member);
+                if (ret) {
+                    log_resource_err(resource, "failed to update member");
+                    return ret;
+                }
+                vres_set_flags(resource, VRES_CHOWN);
+                log_shm_owner(resource, "new_owner=%d", src);
+            }
         }
-        vres_set_flags(resource, VRES_OWN);
     }
     return 0;
 }
-#endif
 
 
 int vres_shm_change_owner(vres_page_t *page, vres_req_t *req)
 {
-#ifdef DYNAMIC_OWNER
+#if MANAGER_TYPE == DYNAMIC_MANAGER
+    return vres_dmgr_change_owner(page, req);
+#elif (MANAGER_TYPE == NO_MANAGER) && defined(DYNAMIC_OWNER)
     return vres_shm_do_change_owner(page, req);
 #else
     return 0;
@@ -1178,7 +1168,7 @@ int vres_shm_notify_holder(vres_req_t *req)
         goto out;
     }
 #ifdef FAST_REPLY
-    if (!vres_shm_cache_check(page, req))
+    if (!vres_shm_check_request(page, req))
         ret = vres_shm_fast_reply(page, req);
     if (-EAGAIN == ret)
 #endif
@@ -1250,10 +1240,9 @@ int vres_shm_deliver(vres_page_t *page, vres_req_t *req)
     vres_clk_t clk = arg->clk;
 
     if (src != resource->owner) {
-        log_resource_err(resource, "invalid src, src=%d", src);
+        log_resource_err(resource, "invalid source %d", src);
         return -EINVAL;
     }
-
     vres_shm_load_updates(resource, page);
     ret = vres_shm_wakeup(resource, page);
     if (ret) {
@@ -1277,13 +1266,14 @@ int vres_shm_deliver(vres_page_t *page, vres_req_t *req)
     }
     vres_pg_clrwait(page);
     vres_pg_clrready(page);
-    vres_pg_clruptodate(page);
+    vres_pg_clrcurr(page);
     vres_shm_clear_updates(resource, page);
     page->hid = vres_page_get_hid(page, src);
     page->clk = page->version;
     if (vres_pg_cand(page)) {
         vres_pg_clrcand(page);
         vres_pg_mkown(page);
+        log_shm_owner(resource, "*owner changes*");
     }
     vres_pg_mkactive(page);
 #ifdef SYNC_TIME
@@ -1293,6 +1283,7 @@ int vres_shm_deliver(vres_page_t *page, vres_req_t *req)
         return ret;
     }
 #endif
+    log_shm_deliver(req);
     return 0;
 }
 
@@ -1310,27 +1301,17 @@ int vres_shm_update_peers(vres_t *resource, vres_page_t *page, vres_shm_peer_inf
             return -EINVAL;
         }
         for (i = 0; i < info->total; i++) {
-            ret = vres_page_add_holder(resource, page, info->list[i].id);
+            ret = vres_page_add_holder(resource, page, info->list[i]);
             if (ret) {
                 log_resource_err(resource, "failed to add holder");
                 return ret;
             }
-            ret = vres_save_peer(&info->list[i]);
-            if (ret) {
-                log_resource_err(resource, "failed to save addr");
-                return ret;
-            }
         }
     }
-    page->owner = info->owner.id;
-    ret = vres_save_peer(&info->owner);
-    if (ret) {
-        log_resource_err(resource, "failed to save addr");
-        return ret;
-    }
-    if (flags & VRES_OWN) {
+    if (flags & VRES_CHOWN) {
         vres_pg_mkcand(page);
         page->owner = resource->owner;
+        log_shm_owner(resource, "new_owner=%d", resource->owner);
     }
     return 0;
 }
@@ -1342,8 +1323,8 @@ int vres_shm_notify_proposer(vres_req_t *req)
     void *entry;
     int ret = 0;
     int total = 0;
-    int ready = 0;
     vres_page_t *page;
+    bool ready = false;
     vres_t *resource = &req->resource;
     int flags = vres_get_flags(resource);
     vres_shm_notify_proposer_arg_t *arg = (vres_shm_notify_proposer_arg_t *)req->buf;
@@ -1360,7 +1341,7 @@ int vres_shm_notify_proposer(vres_req_t *req)
     if (clk > page->clk) {
         if (!vres_pg_own(page)) {
             vres_pg_clrready(page);
-            vres_pg_clruptodate(page);
+            vres_pg_clrcurr(page);
             vres_shm_clear_updates(resource, page);
         }
         log_shm_clock_update(resource, page->clk, clk);
@@ -1375,9 +1356,13 @@ int vres_shm_notify_proposer(vres_req_t *req)
         ptr += VRES_PAGE_DIFF_SIZE;
         log_page_diff(page->diff);
     }
-    if (flags & VRES_PEER) {
+    if (flags & VRES_CRIT) {
         vres_shm_peer_info_t *info = (vres_shm_peer_info_t *)ptr;
 
+        if (!vres_pg_own(page)) {
+            log_shm_owner(resource, "current_owner=%d, nr_holders=%d", arg->arg.owner, info->total);
+            page->owner = arg->arg.owner;
+        }
         ret = vres_shm_update_peers(resource, page, info);
         if (ret) {
             log_resource_err(resource, "failed to update peers");
@@ -1386,8 +1371,8 @@ int vres_shm_notify_proposer(vres_req_t *req)
         if (flags & VRES_RDWR)
             page->count -= info->total;
         else if (flags & VRES_RDONLY) {
-            if (vres_pg_uptodate(page))
-                ready = 1;
+            if (vres_pg_curr(page))
+                ready = true;
             else
                 vres_pg_mkready(page);
         }
@@ -1405,13 +1390,13 @@ int vres_shm_notify_proposer(vres_req_t *req)
     if (flags & VRES_RDWR) {
         page->count++;
         if (0 == page->count)
-            ready = 1;
+            ready = true;
     } else if (flags & VRES_RDONLY) {
         if (total == arg->total) {
             if (vres_pg_ready(page))
-                ready = 1;
+                ready = true;
             else
-                vres_pg_mkuptodate(page);
+                vres_pg_mkcurr(page);
         }
     } else {
         log_resource_err(resource, "invalid flag");
@@ -1419,7 +1404,6 @@ int vres_shm_notify_proposer(vres_req_t *req)
         goto out;
     }
     if (ready) {
-        log_shm_deliver_event(req);
         ret = vres_shm_deliver(page, req);
         if (ret)
             goto out;
@@ -1440,10 +1424,9 @@ out:
 int vres_shm_call(vres_arg_t *arg)
 {
     int ret;
+    bool need_priority = false;
     vres_t *resource = &arg->resource;
     vres_file_entry_t *entry = (vres_file_entry_t *)arg->entry;
-#ifdef CHECK_PRIORITY
-    int need_priority = 0;
     vres_page_t *page = vres_file_get_desc(entry, vres_page_t);
 
     if (vres_shm_need_priority(resource, page)) {
@@ -1452,15 +1435,13 @@ int vres_shm_call(vres_arg_t *arg)
             log_resource_err(resource, "failed to update priority");
             goto out;
         }
-        need_priority = 1;
+        need_priority = true;
     }
-#endif
     ret = klnk_call_broadcast(arg);
     if (ret) {
         log_resource_err(resource, "failed to broadcast");
         goto out;
     }
-#ifdef CHECK_PRIORITY
     if (need_priority) {
         ret = vres_prio_set_idle(resource);
         if (ret) {
@@ -1468,7 +1449,6 @@ int vres_shm_call(vres_arg_t *arg)
             goto out;
         }
     }
-#endif
 out:
     vres_page_put(resource, entry);
     return ret;
@@ -1483,6 +1463,7 @@ int vres_shm_handle_zeropage(vres_t *resource, vres_page_t *page)
 
     memset(page, 0, sizeof(vres_page_t));
     page->owner = resource->owner;
+    log_shm_owner(resource, "first_owner=%d", page->owner);
     vres_pg_mkown(page);
     if (flags & VRES_RDWR)
         page->clk = 1;
@@ -1515,14 +1496,9 @@ int vres_shm_handle_zeropage(vres_t *resource, vres_page_t *page)
         arg->arg.owner = page->owner;
         arg->arg.cmd = VRES_SHM_NOTIFY_PROPOSER;
         info = (vres_shm_peer_info_t *)&arg[1];
-        if (vres_get_peer(page->owner, &info->owner)) {
-            log_resource_err(resource, "failed to get peer");
-            ret = -EFAULT;
-            goto out;
-        }
         if (flags & VRES_RDWR)
             info->total = 1;
-        vres_set_flags(&res, VRES_PEER);
+        vres_set_flags(&res, VRES_CRIT);
         if (klnk_io_sync(&res, (char *)arg, size, NULL, 0, &src)) {
             log_resource_err(resource, "failed to send request");
             ret = -EFAULT;
@@ -1562,9 +1538,9 @@ int vres_shm_do_forward(vres_page_t *page, vres_req_t *req)
 
 int vres_shm_forward(vres_page_t *page, vres_req_t *req)
 {
-#if defined(DYNAMIC_MANAGER)
+#if MANAGER_TYPE == DYNAMIC_MANAGER
     return vres_dmgr_forward(page, req);
-#elif defined(DYNAMIC_OWNER)
+#elif (MANAGER_TYPE == NO_MANAGER) && defined(DYNAMIC_OWNER)
     return vres_shm_do_forward(page, req);
 #else
     return 0;
@@ -1572,46 +1548,44 @@ int vres_shm_forward(vres_page_t *page, vres_req_t *req)
 }
 
 
-static inline bool vres_shm_can_forward()
+static inline bool vres_shm_check_forward(vres_page_t *page, vres_req_t *req)
 {
-#if defined(DYNAMIC_OWNER) || defined(DYNAMIC_MANAGER)
-    return true;
+    vres_t *resource = &req->resource;
+    vres_id_t src = vres_get_id(resource);
+    vres_shmfault_arg_t *arg = (vres_shmfault_arg_t *)req->buf;
+    vres_peers_t *peers = &arg->peers;
+
+    return !vres_pg_own(page) && (src != page->owner) && ((arg->cmd != VRES_SHM_CHK_OWNER) || (peers->list[0] == resource->owner));
+}
+
+
+static inline bool vres_shm_need_forward(vres_page_t *page, vres_req_t *req)
+{
+#if (MANAGER_TYPE == DYNAMIC_MANAGER) || ((MANAGER_TYPE == NO_MANAGER) && defined(DYNAMIC_OWNER))
+    return vres_shm_check_forward(page, req);
 #else
     return false;
 #endif
 }
 
 
-static inline int vres_shm_need_forward(vres_page_t *page, vres_req_t *req)
-{
-    if (vres_shm_can_forward()) {
-        vres_shmfault_arg_t *arg = (vres_shmfault_arg_t *)req->buf;
-        vres_peers_t *peers = &arg->peers;
-        vres_t *resource = &req->resource;
-
-        return !vres_pg_own(page) && (peers->list[0] == resource->owner);
-    } else
-        return 0;
-}
-
-
-#ifdef CHECK_PRIORITY
 static inline int vres_shm_check_priority(vres_page_t *page, vres_req_t *req, int flags)
 {
+#ifdef CHECK_PRIORITY
     vres_t *resource = &req->resource;
 
-    if (vres_shm_need_priority(resource, page) && !(flags & (VRES_SELECT | VRES_REDO)))
+    if (vres_shm_need_priority(resource, page) && !(flags & (VRES_PRIO | VRES_REDO)))
         return vres_prio_check(req);
     else
+#endif
         return 0;
 }
-#endif
+
 
 int vres_shm_check_owner(vres_req_t *req, int flags)
 {
     int ret = 0;
     void *entry;
-    int owner = 0;
     vres_page_t *page;
     vres_t *resource = &req->resource;
 
@@ -1626,20 +1600,15 @@ int vres_shm_check_owner(vres_req_t *req, int flags)
             ret = vres_shm_handle_zeropage(resource, page);
             goto out;
         }
-        owner = 1;
     } else if (!entry)
         return 0;
-
 #ifdef FAST_REPLY
-    if (vres_shm_cache_check(page, req))
+    if (vres_shm_check_request(page, req))
         goto out;
 #endif
-
-#ifdef CHECK_PRIORITY
     ret = vres_shm_check_priority(page, req, flags);
     if (ret)
         goto out;
-#endif
     if (vres_pg_own(page)) {
         if (vres_pg_wait(page)) {
             if (!(flags & VRES_REDO)) {
@@ -1651,18 +1620,19 @@ int vres_shm_check_owner(vres_req_t *req, int flags)
                 return -EAGAIN;
             }
         }
-        if (owner) {
-            ret = vres_shm_change_owner(page, req);
-            if (ret) {
-                log_resource_err(resource, "failed to change owner");
-                goto out;
-            }
-        }
+    }
+    ret = vres_shm_change_owner(page, req);
+    if (ret) {
+        log_resource_err(resource, "failed to change owner");
+        goto out;
     }
     if (vres_shm_need_forward(page, req)) {
         ret = vres_shm_forward(page, req);
         if (ret) {
-            log_resource_err(resource, "failed to send to owner");
+            if (-EAGAIN == ret)
+                ret = vres_shm_save_req(page, req);
+            else
+                log_resource_err(resource, "failed to send to owner");
             goto out;
         }
     }
@@ -1686,17 +1656,13 @@ int vres_shm_notify_owner(vres_req_t *req, int flags)
         log_resource_err(resource, "no entry");
         return -ENOENT;
     }
-
 #ifdef FAST_REPLY
-    if (vres_shm_cache_check(page, req))
+    if (vres_shm_check_request(page, req))
         goto out;
 #endif
-
-#ifdef CHECK_PRIORITY
     ret = vres_shm_check_priority(page, req, flags);
     if (ret)
         goto out;
-#endif
     if (vres_pg_own(page)) {
         if (vres_pg_wait(page)) {
             if (!(flags & VRES_REDO)) {
@@ -1708,8 +1674,14 @@ int vres_shm_notify_owner(vres_req_t *req, int flags)
                 return -EAGAIN;
             }
         }
-    } else if (vres_shm_can_forward()) {
+    } else if (vres_shm_need_forward(page, req)) {
         ret = vres_shm_forward(page, req);
+        if (ret) {
+            if (-EAGAIN == ret)
+                ret = vres_shm_save_req(page, req);
+            else
+                log_resource_err(resource, "failed to send to owner");
+        }
         goto out;
     }
     ret = vres_shm_do_check_owner(page, req);
@@ -1751,20 +1723,20 @@ int vres_shm_propose(vres_req_t *req)
 }
 
 
-#ifdef CHECK_TTL
 int vres_shm_check_ttl(vres_req_t *req)
 {
+#ifdef CHECK_TTL
     vres_t *resource = &req->resource;
     vres_shmfault_arg_t *arg = (vres_shmfault_arg_t *)req->buf;
 
     arg->ttl += 1;
     if (arg->ttl > VRES_SHM_TTL_MAX) {
-        log_resource_err(resource, "op=%s, TTL is out of range", log_get_shmop(arg->cmd));
+        log_resource_err(resource, "cmd=%s, TTL is out of range", log_get_shm_cmd(arg->cmd));
         return -EINVAL;
     }
+#endif
     return 0;
 }
-#endif
 
 
 vres_reply_t *vres_shm_fault(vres_req_t *req, int flags)
@@ -1773,13 +1745,11 @@ vres_reply_t *vres_shm_fault(vres_req_t *req, int flags)
     vres_t *resource = &req->resource;
     vres_shmfault_arg_t *arg = (vres_shmfault_arg_t *)req->buf;
 
-#ifdef CHECK_TTL
     ret = vres_shm_check_ttl(req);
     if (ret) {
         vres_shm_handle_err(resource, ret);
         return NULL;
     }
-#endif
     switch (arg->cmd) {
     case VRES_SHM_PROPOSE:
         ret = vres_shm_propose(req);
@@ -1807,7 +1777,7 @@ vres_reply_t *vres_shm_fault(vres_req_t *req, int flags)
             return vres_reply_err(ret);
         else {
             vres_shm_handle_err(resource, ret);
-            log_resource_err(resource, "op=%s, failed", log_get_shmop(arg->cmd));
+            log_resource_err(resource, "cmd=%s, failed", log_get_shm_cmd(arg->cmd));
         }
     }
     return NULL;
@@ -1816,7 +1786,7 @@ vres_reply_t *vres_shm_fault(vres_req_t *req, int flags)
 
 int vres_shm_rmid(vres_req_t *req)
 {
-    int active;
+    bool active;
     int ret = 0;
     vres_t *resource = &req->resource;
 
@@ -2000,9 +1970,9 @@ int vres_shm_do_get_peers(vres_t *resource, vres_page_t *page, vres_peers_t *pee
 
 int vres_shm_get_peers(vres_t *resource, vres_page_t *page, vres_peers_t *peers)
 {
-#if defined(STATIC_MANAGER)
+#if MANAGER_TYPE == STATIC_MANAGER
     return vres_smgr_get_peers(resource, page, peers);
-#elif defined(DYNAMIC_MANAGER)
+#elif MANAGER_TYPE == DYNAMIC_MANAGER
     return vres_dmgr_get_peers(resource, page, peers);
 #else
     return vres_shm_do_get_peers(resource, page, peers);
@@ -2017,7 +1987,6 @@ int vres_shm_passthrough(vres_t *resource, vres_page_t *page)
 
     if (!vres_pg_active(page))
         return 0;
-
     if (((1 == page->nr_holders) && (page->holders[0] == src)) || (flags & VRES_RDONLY)
         || ((flags & VRES_RDWR) && vres_pg_write(page))) {
         if (flags & VRES_RDWR)
@@ -2044,7 +2013,6 @@ void vres_shm_mkwait(vres_t *resource, vres_page_t *page)
 }
 
 
-#ifdef CHECK_PRIORITY
 vres_req_t *vres_shm_get_req(vres_t *resource)
 {
     vres_req_t *req;
@@ -2075,7 +2043,6 @@ void vres_shm_put_req(vres_req_t *req)
 {
     free(req);
 }
-#endif
 
 
 int vres_shm_check_arg(vres_arg_t *arg)
@@ -2087,7 +2054,6 @@ int vres_shm_check_arg(vres_arg_t *arg)
 
     if (vres_get_op(resource) != VRES_OP_SHMFAULT)
         return 0;
-
     entry = vres_page_get(resource, &page, VRES_PAGE_RDWR | VRES_PAGE_CREAT);
     if (!entry) {
         log_resource_err(resource, "no entry, op=%s", log_get_op(vres_get_op(resource)));
@@ -2104,7 +2070,6 @@ int vres_shm_check_arg(vres_arg_t *arg)
     ret = vres_shm_passthrough(resource, page);
     if (ret)
         goto out;
-#ifdef CHECK_PRIORITY
     if (vres_shm_need_priority(resource, page)) {
         vres_req_t *req = vres_shm_get_req(resource);
 
@@ -2116,7 +2081,6 @@ int vres_shm_check_arg(vres_arg_t *arg)
         ret = vres_prio_check(req);
         vres_shm_put_req(req);
     }
-#endif
     log_shm_check_arg(resource);
 out:
     if (ret) {
@@ -2142,7 +2106,6 @@ int vres_shm_get_arg(vres_t *resource, vres_arg_t *arg)
 
     if (vres_get_op(resource) != VRES_OP_SHMFAULT)
         return 0;
-
     if (!arg->entry) {
         arg->entry = vres_page_get(resource, &page, VRES_PAGE_RDWR | VRES_PAGE_CREAT);
         if (!arg->entry) {
@@ -2151,7 +2114,6 @@ int vres_shm_get_arg(vres_t *resource, vres_arg_t *arg)
         }
     } else
         page = vres_file_get_desc((vres_file_entry_t *)arg->entry, vres_page_t);
-
     size = sizeof(vres_shmfault_arg_t) + VRES_PAGE_NR_HOLDERS * sizeof(vres_id_t);
     shmfault_arg = (vres_shmfault_arg_t *)calloc(1, size);
     if (!shmfault_arg) {

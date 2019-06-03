@@ -36,12 +36,10 @@ int vres_sem_create(vres_t *resource)
         log_err("no memory");
         return -ENOMEM;
     }
-
     sma->sem_perm.mode = vres_get_flags(resource) & S_IRWXUGO;
     sma->sem_perm.__key = resource->key;
     sma->sem_nsems = nsems;
     sma->sem_ctime = time(0);
-
     vres_get_state_path(resource, path);
     filp = vres_file_open(path, "w");
     if (!filp) {
@@ -49,7 +47,6 @@ int vres_sem_create(vres_t *resource)
         free(sma);
         return -ENOENT;
     }
-
     if (vres_file_write((char *)sma, 1, size, filp) != size) {
         log_err("failed to write");
         ret = -EIO;
@@ -69,7 +66,6 @@ int vres_sem_get_arg(vres_t *resource, vres_arg_t *arg)
 
         if (arg->inlen < sizeof(vres_semop_arg_t))
             return -EINVAL;
-
         if (memcmp(timeout, empty, sizeof(struct timespec)))
             arg->timeout = timeout;
     }
@@ -89,25 +85,20 @@ struct vres_sem_array *vres_sem_check(vres_t *resource)
     filp = vres_file_open(path, "r");
     if (!filp)
         return NULL;
-
     size = vres_file_size(filp);
     if (size < sizeof(struct vres_sem_array))
         goto out;
-
     buf = malloc(size);
     if (!buf)
         goto out;
-
     if (vres_file_read(buf, 1, size, filp) != size) {
         free(buf);
         goto out;
     }
-
     if (size != vres_sma_size(((struct vres_sem_array *)buf)->sem_nsems)) {
         free(buf);
         goto out;
     }
-
     sma = (struct vres_sem_array *)buf;
 out:
     vres_file_close(filp);
@@ -128,13 +119,11 @@ int vres_sem_update(vres_t *resource, struct vres_sem_array  *sma)
         log_err("no entry");
         return -ENOENT;
     }
-
     size = vres_sma_size(sma->sem_nsems);
     if (vres_file_write((char *)sma, 1, size, filp) != size) {
         log_err("failed to write");
         ret = -EIO;
     }
-
     vres_file_close(filp);
      return ret;
 }
@@ -163,7 +152,6 @@ vres_semundo_t *vres_sem_check_undo(vres_t *resource)
     entry = vres_file_get_entry(path, 0, FILE_RDONLY);
     if (!entry)
         return NULL;
-
     undos = vres_file_get_desc(entry, vres_semundo_t);
     undo_size = vres_semundo_size(undos);
     total = vres_file_items_count(entry, undo_size);
@@ -209,7 +197,6 @@ int vres_sem_update_undo(vres_t *resource, vres_semundo_t *un)
         log_err("invalid undo");
         return -EINVAL;
     }
-
     undo_size = vres_semundo_size(un);
     vres_get_action_path(resource, path);
     entry = vres_file_get_entry(path, 0, FILE_RDWR);
@@ -229,7 +216,6 @@ int vres_sem_update_undo(vres_t *resource, vres_semundo_t *un)
             }
         }
     }
-
     if (!updated) {
         if (!entry) {
             entry = vres_file_get_entry(path, 0, FILE_RDWR | FILE_CREAT);
@@ -257,7 +243,6 @@ void vres_sem_reset_undos(vres_t *resource, int semnum)
     entry = vres_file_get_entry(path, 0, FILE_RDWR);
     if (!entry)
         return;
-
     undos = vres_file_get_desc(entry, vres_semundo_t);
     undo_size = vres_semundo_size(undos);
     total = vres_file_items_count(entry, undo_size);
@@ -283,7 +268,6 @@ void vres_sem_remove_undo(vres_t *resource)
     entry = vres_file_get_entry(path, 0, FILE_RDWR);
     if (!entry)
         return;
-
     undos = vres_file_get_desc(entry, vres_semundo_t);
     undo_size = vres_semundo_size(undos);
     total = vres_file_items_count(entry, undo_size);
@@ -326,18 +310,15 @@ vres_reply_t *vres_sem_semop(vres_req_t *req,  int flags)
     len = sizeof(vres_semop_arg_t) + nsops * sizeof(struct sembuf);
     if ((flags & VRES_CANCEL) || (req->length < len))
         return vres_reply_err(-EINVAL);
-
     sma = vres_sem_check(resource);
     if (!sma)
         return vres_reply_err(-EFAULT);
-
     for (sop = sops; sop < sops + nsops; sop++) {
         if (sop->sem_num >= max)
             max = sop->sem_num;
         if (sop->sem_flg & SEM_UNDO)
             undos = 1;
     }
-
     if (undos) {
         un = vres_sem_check_undo(resource);
         if (!un) {
@@ -348,13 +329,11 @@ vres_reply_t *vres_sem_semop(vres_req_t *req,  int flags)
             }
         }
     }
-
     if (max >= sma->sem_nsems) {
         log_err("invalid sem");
         ret = -EFBIG;
         goto out;
     }
-
     for (sop = sops; sop < sops + nsops; sop++) {
         int semval;
         int sem_op = sop->sem_op;
@@ -374,13 +353,11 @@ vres_reply_t *vres_sem_semop(vres_req_t *req,  int flags)
                 ret = -EAGAIN;
             goto out;
         }
-
         if (semval > VRES_SEMVMX) {
             log_err("invalid sem");
             ret = -ERANGE;
             goto out;
         }
-
         if (sop->sem_flg & SEM_UNDO) {
             int undo = un->semadj[sop->sem_num] - sem_op;
 
@@ -391,28 +368,24 @@ vres_reply_t *vres_sem_semop(vres_req_t *req,  int flags)
             }
             un->semadj[sop->sem_num] -= sop->sem_op;
         }
-
         curr->semval = semval;
         curr->sempid =vres_get_id(resource);
-        log_sem_semop(resource->key, nsops, sop->sem_num, semval, vres_get_id(resource));
+        log_sem_semop(resource->key, sop->sem_num, semval, vres_get_id(resource));
     }
     sma->sem_otime = time(0);
     if (un)
         ret = vres_sem_update_undo(resource, un);
-
     if (ret) {
         log_err("failed to update undo");
         ret = -EFAULT;
         goto out;
     }
-
     ret = vres_sem_update(resource, sma);
     if (ret) {
         log_err("failed to update sem");
         ret = -EFAULT;
         goto out;
     }
-
     if (!(flags & VRES_REDO)) {
         ret = vres_redo_all(resource, 0);
         if (ret) {
@@ -421,7 +394,6 @@ vres_reply_t *vres_sem_semop(vres_req_t *req,  int flags)
             goto out;
         }
     }
-    sem_log(resource);
 out:
     free(sma);
     if (undos)
@@ -445,7 +417,6 @@ static int vres_sem_getncnt(vres_t *resource, int semnum)
         return 0;
     else if (ret)
         return -EINVAL;
-
     for (;;) {
         int i;
         struct sembuf *sops;
@@ -455,13 +426,11 @@ static int vres_sem_getncnt(vres_t *resource, int semnum)
         ret = vres_record_get(path, index, &record);
         if (ret)
             return ret;
-
         arg = (vres_semop_arg_t *)record.req->buf;
         sops = arg->sops;
         for (i = 0; i < arg->nsops; i++)
             if ((sops[i].sem_num == semnum) && (sops[i].sem_op < 0) && !(sops[i].sem_flg & IPC_NOWAIT))
                 ncnt++;
-
         vres_record_put(&record);
         ret = vres_record_next(path, &index);
         if (-ENOENT == ret)
@@ -497,13 +466,11 @@ static int vres_sem_getzcnt(vres_t *resource, int semnum)
         ret = vres_record_get(path, index, &record);
         if (ret)
             return ret;
-
         arg = (vres_semop_arg_t *)record.req->buf;
         sops = arg->sops;
         for (i = 0; i < arg->nsops; i++)
             if ((sops[i].sem_num == semnum) && (0 == sops[i].sem_op) && !(sops[i].sem_flg & IPC_NOWAIT))
                 zcnt++;
-
         vres_record_put(&record);
         ret = vres_record_next(path, &index);
         if (-ENOENT == ret)
@@ -547,12 +514,10 @@ vres_reply_t *vres_sem_semctl(vres_req_t *req, int flags)
 
     if ((flags & VRES_CANCEL) || (req->length < sizeof(vres_semctl_arg_t)))
         return vres_reply_err(-EINVAL);
-
     sma = vres_sem_check(resource);
     if (!sma)
         return vres_reply_err(-EFAULT);
     nsems = sma->sem_nsems;
-
     switch (cmd) {
     case IPC_INFO:
     case SEM_INFO:
@@ -573,14 +538,12 @@ vres_reply_t *vres_sem_semctl(vres_req_t *req, int flags)
     default:
         break;
     }
-
     reply = vres_reply_alloc(outlen);
     if (!reply) {
         free(sma);
         return vres_reply_err(-ENOMEM);
     }
     result = vres_result_check(reply, vres_semctl_result_t);
-
     switch (cmd) {
     case SEM_NSEMS:
         ret = nsems;
@@ -633,8 +596,10 @@ vres_reply_t *vres_sem_semctl(vres_req_t *req, int flags)
             }
         }
         vres_sem_remove_all_undos(resource);
-        for (i = 0; i < nsems; i++)
+        for (i = 0; i < nsems; i++) {
             sma->sem_base[i].semval = array[i];
+            log_sem_semctl(resource, "SETALL, semnum=%d, semval=%d", i, array[i]);
+        }
         sma->sem_ctime = time(0);
         ret = vres_sem_update(resource, sma);
         if (!ret)
@@ -661,13 +626,12 @@ vres_reply_t *vres_sem_semctl(vres_req_t *req, int flags)
         ret = vres_sem_update(resource, sma);
         if (!ret)
             ret = vres_redo_all(resource, 0);
+        log_sem_semctl(resource, "SETVAL, semnum=%d, semval=%d", semnum, sem->semval);
         break;
     default:
         ret = -EINVAL;
         break;
     }
-    if (!ret)
-        sem_log(resource);
 out:
     if (sma)
         free(sma);
@@ -686,13 +650,11 @@ void vres_sem_exit(vres_req_t *req)
     sma = vres_sem_check(resource);
     if (!sma)
         return;
-
     un = vres_sem_check_undo(resource);
     if (!un) {
         free(sma);
         return;
     }
-
     for (i = 0; i < sma->sem_nsems; i++) {
         struct vres_sem * sem = &sma->sem_base[i];
 

@@ -21,15 +21,14 @@
 #include "handler.h"
 #include "barrier.h"
 #include "mutex.h"
-#include "debug.h"
 #include "trace.h"
 #include "rpc.h"
 #include "io.h"
 
-// #define LOG_KLNK_OPEN
+#define LOG_KLNK_OPEN
 
 #ifdef LOG_KLNK_OPEN
-#define log_klnk_open klnk_log
+#define log_klnk_open log_resource_info
 #else
 #define log_klnk_open(...) do  {} while (0)
 #endif

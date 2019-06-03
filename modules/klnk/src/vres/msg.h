@@ -26,10 +26,10 @@
 #define SEARCH_LESSEQUAL 4
 
 #ifdef SHOW_MSG
-#define msg_log log_resource
-#else
-#define msg_log(...) do {} while (0)
+#define LOG_MSG
 #endif
+
+#include "log_msg.h"
 
 typedef struct vres_msgsnd_arg {
     long msgtyp;

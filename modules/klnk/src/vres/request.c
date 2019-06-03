@@ -14,6 +14,7 @@ int vres_request_join(vres_t *resource, vres_join_result_t **result)
     vres_t res = *resource;
     vres_join_result_t *p = NULL;
 
+    log_request_join(resource);
     if (vres_member_is_public(resource)) {
         size  = sizeof(vres_join_result_t) + VRES_MEMBER_MAX * sizeof(vres_id_t);
         p = (vres_join_result_t *)malloc(size);
@@ -34,7 +35,6 @@ int vres_request_join(vres_t *resource, vres_join_result_t **result)
         goto out;
     }
     *result = p;
-    log_request_join(resource);
 out:
     if (ret && p)
         free(p);

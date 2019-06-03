@@ -4,7 +4,6 @@
 #include <vres.h>
 #include <eval.h>
 #include <errno.h>
-#include "debug.h"
 #include "util.h"
 #include "io.h"
 

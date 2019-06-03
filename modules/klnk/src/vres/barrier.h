@@ -5,32 +5,39 @@
 #include <errno.h>
 #include <pthread.h>
 #include "resource.h"
-#include "rbtree.h"
+#include "common.h"
 #include "trace.h"
 
 #define VRES_BARRIER_TIMEOUT    5000000 // usec
-#define VRES_BARRIER_GROUP_SIZE 1024
 #define VRES_BARRIER_CLEAR      1
+#define VRES_BARRIER_GROUP_SIZE 256
+#define VRES_BARRIER_ENTRY_SIZE 4
 
 #ifdef SHOW_BARRIER
-#define barrier_log log_resource_ln
-#else
-#define barrier_log(...) do {} while (0)
+#define LOG_BARRIER_SET
+#define LOG_BARRIER_WAIT
+#define LOG_BARRIER_CLEAR
+#define LOG_BARRIER_WAIT_TIMEOUT
 #endif
 
+#include "log_barrier.h"
+
+typedef unsigned long vres_barrier_entry_t;
+
 typedef struct vres_barrier_desc {
-    unsigned long entry[4];
+    vres_barrier_entry_t entry[VRES_BARRIER_ENTRY_SIZE];
 } vres_barrier_desc_t;
 
 typedef struct vres_barrier_group {
     pthread_rwlock_t lock;
-    rbtree head;
+    rbtree_t tree;
 } vres_barrier_group_t;
 
 typedef struct vres_barrier {
     vres_barrier_desc_t desc;
     pthread_mutex_t mutex;
     pthread_cond_t cond;
+    rbtree_node_t node;
     int count;
     int flags;
 } vres_barrier_t;

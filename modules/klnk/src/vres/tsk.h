@@ -6,7 +6,13 @@
 #include "file.h"
 
 #define TSK_RESERVE
-#define TSK_WAKEUP 0x0001
+#define TSK_REALLOC
+#define TSK_ID_START 1024 // the TSK_ID_START should be greater than then the nunber of managers
+
+enum vres_tsk_cmd {
+    VRES_TSK_WAKEUP=1,
+    VRES_TSK_NR_COMMANDS
+};
 
 #ifdef SHOW_TSK
 #define LOG_TSK_PUT

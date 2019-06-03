@@ -14,6 +14,13 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 
+#define DISABLE_PGSAVE
+#define DISABLE_TSKPUT
+
+#define NO_MANAGER       0
+#define STATIC_MANAGER   1
+#define DYNAMIC_MANAGER  2
+
 #define PAGE_SIZE        4096
 #define PAGE_SHIFT       12
 #define BITS_PER_BYTE    8
@@ -33,13 +40,13 @@
 #define VRES_RDONLY      0x0001
 #define VRES_RDWR        0x0002
 #define VRES_CREAT       0x0004
-#define VRES_OWN         0x0010
+#define VRES_CHOWN       0x0010
 #define VRES_CAND        0x0020
 #define VRES_REDO        0x0040
 #define VRES_CANCEL      0x0080
-#define VRES_SELECT      0x0100
+#define VRES_PRIO        0x0100
 #define VRES_DIFF        0x0200
-#define VRES_PEER        0x0400
+#define VRES_CRIT        0x0400
 
 #define VRES_STAT_INIT   1
 
@@ -98,7 +105,7 @@ enum vres_operation {
 #define VRES_IO_MAX             ((1 << 14) - 1)
 #define VRES_BUF_MAX            ((1 << 16) - 1)
 #define VRES_INDEX_MAX          ((1 << 30) - 1)
-#define VRES_MANAGER_MAX        32
+#define VRES_MANAGER_MAX        16
 
 typedef key_t vres_key_t;
 typedef int32_t vres_id_t;

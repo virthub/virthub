@@ -14,11 +14,22 @@ from init import *
 from lib.util import addr2name
 
 def usage():
-    print('usage: %s [addr] [-a|-d|-c]')
-    print("addr: the address of the target environment")
+    print('usage: %s [-c|-a|-d] [ip address]')
+    print("-c: create an environment")
     print("-a: attach to the target environment")
     print("-d: detach from the target environment")
-    print("-c: create an environment")
+    print("addr: the address of the target environment")
+
+def _is_valid_addr(addr):
+    fields = addr.split('.')
+    if len(fields) != 4:
+        usage()
+        sys.exit(-1)
+    for i in fields:
+        val = int(i)
+        if val < 0 or val > 255:
+            usage()
+            sys.exit(-1)
 
 def _clean(addr):
     name = addr2name(addr)
@@ -31,19 +42,21 @@ if __name__ == '__main__':
         usage()
         sys.exit(-1)
     parser = argparse.ArgumentParser()
-    parser.add_argument('-a', '--attach', action='store_true')
-    parser.add_argument('-d', '--detach', action='store_true')
-    parser.add_argument('-c', '--create', action='store_true')
-    args = parser.parse_args(sys.argv[2:])
-    addr = sys.argv[1]
+    parser.add_argument('-a', '--attach', default='')
+    parser.add_argument('-d', '--detach', default='')
+    parser.add_argument('-c', '--create', default='')
+    args = parser.parse_args(sys.argv[1:])
     if args.attach:
-        _clean(addr)
-        attach(addr)
+        _is_valid_addr(args.attach)
+        _clean(args.attach)
+        attach(args.attach)
     elif args.detach:
-        detach(addr)
+        _is_valid_addr(args.detach)
+        detach(args.detach)
     elif args.create:
-        _clean(addr)
-        create(addr)
+        _is_valid_addr(args.create)
+        _clean(args.create)
+        create(args.create)
     else:
         usage()
         sys.exit(-1)

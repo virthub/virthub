@@ -118,7 +118,6 @@ int vres_restore_task(vres_t *resource, int flags)
         log_resource_err(resource, "failed to get task");
         return -EINVAL;
     }
-
     log_restore_task(resource);
     return 0;
 }
@@ -134,13 +133,11 @@ int vres_restore(vres_t *resource, int flags)
         log_resource_err(resource, "failed to restore resource");
         goto out;
     }
-
     ret = vres_restore_task(resource, flags);
     if (ret) {
         log_resource_err(resource, "failed to restore task");
         goto out;
     }
-
     ret = vres_ckpt_resume(resource, flags);
     if (ret) {
         log_resource_err(resource, "failed to resume");

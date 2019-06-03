@@ -6,22 +6,20 @@
 #ifdef LOG_PAGE_DIFF
 #define log_page_diff(diff) do { \
     int i, j; \
-    log_ln("page_diff:");
+    char tmp[LOG_STR_LEN] = {0}; \
+    log_str(tmp, "page_diff:\n");
     for (i = 0; i < VRES_PAGE_NR_VERSIONS; i++) { \
         for (j = 0; j < VRES_LINE_MAX; j++) \
-            log("%d ", diff[i][j]); \
-        log("\n"); \
+            log_str(tmp + strlen(tmp)"%d ", diff[i][j]); \
     } \
+    log_ln("%s", tmp); \
 } while (0)
 #else
 #define log_page_diff(...) do {} while (0)
 #endif
 
 #ifdef LOG_PAGE_GET
-#define log_page_get(resource, path) do { \
-    log_resource(resource); \
-    log_ln(", path=%s", path); \
-} while (0)
+#define log_page_get(resource, path) log_resource_info(resource, "path=%s", path)
 #else
 #define log_page_get(...) do {} while (0)
 #endif

@@ -5,22 +5,17 @@
 #include <string.h>
 #include <stdlib.h>
 
-#ifdef NO_MANAGER
 #define VRES_LINE_SHIFT      4
-#else
-#define VRES_LINE_SHIFT      0
-#endif
-
 #define VRES_LINE_SIZE       (PAGE_SIZE >> VRES_LINE_SHIFT)
 #define VRES_LINE_MAX        (1 << VRES_LINE_SHIFT)
 #define VRES_LINE_NR_SAMPLES 16
 
-#ifdef SHOW_LING
 #define LOG_NR_LINES         1
 #define LOG_NR_BYTES         (sizeof(unsigned long) * 20)
 
-#define LOG_LINE_DIFF
+#ifdef SHOW_LING
 #define LOG_LINES
+#define LOG_LINE_DIFF
 
 #ifdef SHOW_MORE
 #define LOF_LINE_NUM

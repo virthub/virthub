@@ -11,7 +11,7 @@
 #include <unistd.h>
 #include <stdbool.h>
 #include <pthread.h>
-#include "rbtree.h"
+#include "common.h"
 
 #define FILE_RDONLY    VRES_RDONLY
 #define FILE_RDWR      VRES_RDWR
@@ -41,21 +41,25 @@
 typedef char ** vres_file_desc_t;
 
 typedef struct vres_file {
-    unsigned long f_pos;
     char f_path[FILE_PATH_MAX];
-    char *f_buf;
+    rbtree_node_t f_node;
+    unsigned long f_pos;
     size_t f_size;
+    char *f_buf;
+
 } vres_file_t;
 
 typedef struct vres_file_dir {
-    pthread_rwlock_t d_lock;
     char d_path[FILE_PATH_MAX];
+    pthread_rwlock_t d_lock;
+    rbtree_node_t d_node;
+    rbtree_t d_tree;
     int d_count;
-    rbtree d_tree;
 } vres_file_dir_t;
 
 typedef struct vres_file_name {
     char name[FILE_PATH_MAX];
+    rbtree_node_t node;
 } vres_file_name_t;
 
 typedef struct vres_file_entry {

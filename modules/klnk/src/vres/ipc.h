@@ -6,6 +6,7 @@
 #include "resource.h"
 
 #ifdef SHOW_IPC
+#define LOG_IPC_GET
 #define LOG_IPC_CHECK_ARG
 #endif
 

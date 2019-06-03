@@ -20,7 +20,6 @@ static inline int vres_dump_file(char *path, void *arg)
         log_err("no entry");
         return -ENOENT;
     }
-
     buf = vres_file_get_desc(entry, char);
     len = vres_file_items_count(entry, 1);
     fprintf(filp, "%s\n", path);
@@ -48,31 +47,25 @@ int vres_dump_task(vres_t *resource, int flags)
 
     if (!(flags & CKPT_LOCAL))
         return 0;
-
     ret = vres_lookup(resource, &desc);
     if (ret) {
         log_err("failed to lookup");
         return ret;
     }
-
     memset(&arg, 0, sizeof(ckpt_arg_t));
     arg.flags = CKPT_KILL;
     arg.id = desc.id;
-#ifdef CONTAINER
     strcpy(arg.node, master_name);
-#endif
     ret = vres_ckpt_get_path_by_id(resource->owner, TSK_NAME, arg.path);
     if (ret) {
         log_err("failed to get path");
         return ret;
     }
-
     fd = open(CKPT_DEV_FILE, O_RDONLY);
     if (fd < 0) {
         log_err("failed to open file");
         return -EINVAL;
     }
-
     ret = ioctl(fd, CKPT_IOCTL_DUMP, (int)&arg);
     log_dump_task(resource);
     close(fd);
@@ -96,13 +89,11 @@ int vres_dump_resource(vres_t *resource, int flags)
         log_err("failed to get path");
         return ret;
     }
-
     filp = fopen(path, "w");
     if (!filp) {
         log_err("no entry");
         return -ENOENT;
     }
-
     ret = vres_file_handle_file(vres_dump_file, root, (void *)filp);
     log_dump_resource(resource);
     fclose(filp);
@@ -120,31 +111,26 @@ int vres_dump(vres_t *resource, int flags)
         log_resource_err(resource, "failed to check");
         goto out;
     }
-
     ret = vres_ckpt_clear(resource);
     if (ret) {
         log_resource_err(resource, "failed to clear");
         goto out;
     }
-
     ret = vres_ckpt_suspend(resource, flags);
     if (ret) {
         log_resource_err(resource, "failed to suspend");
         goto out;
     }
-
     ret = vres_dump_resource(resource, flags);
     if (ret) {
         log_resource_err(resource, "failed to dump resource");
         goto out;
     }
-
     ret = vres_dump_task(resource, flags);
     if (ret) {
         log_resource_err(resource, "failed to dump task");
         goto out;
     }
-
     log_dump(resource);
 out:
     return ret;

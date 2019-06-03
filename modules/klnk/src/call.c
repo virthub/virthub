@@ -12,11 +12,13 @@ int klnk_call(vres_arg_t *arg)
     int ret;
 
     ret = klnk_io_sync(&arg->resource, arg->in, arg->inlen, arg->out, arg->outlen, arg->dest);
-    if (ret && !vres_is_generic_err(ret)) {
-        arg->index = vres_err_to_index(ret);
-        ret = 0;
+    if (ret) {
+        if (!vres_is_generic_err(ret)) {
+            arg->index = vres_err_to_index(ret);
+            ret = 0;
+        } else
+            log_resource_err(&arg->resource, "failed, ret=%s", log_get_err(ret));
     }
-
     return ret;
 }
 
@@ -33,23 +35,20 @@ int klnk_call_broadcast(vres_arg_t *arg)
         pthread_t *threads = (pthread_t *)malloc(arg->peers->total * sizeof(pthread_t));
 
         if (!threads) {
-            klnk_log_err("no memory");
+            log_resource_err(&arg->resource, "no memory");
             return -ENOMEM;
         }
-
         for (i = 0; i < arg->peers->total; i++) {
             ret = klnk_io_async(&arg->resource, arg->in, arg->inlen, arg->out, arg->outlen, &arg->peers->list[i], &threads[i]);
             if (ret) {
-                klnk_log_err("I/O error");
+                log_resource_err(&arg->resource, "failed, ret=%s", log_get_err(ret));
                 break;
             }
             count++;
         }
-
         for (i = 0; i < count; i++)
             pthread_join(threads[i], NULL);
         free(threads);
     }
-
     return ret;
 }

@@ -6,27 +6,31 @@
 #include <errno.h>
 #include <list.h>
 #include "resource.h"
-#include "rbtree.h"
+#include "common.h"
 
-#define VRES_CACHE_GROUP_SIZE 1024
-#define VRES_CACHE_QUEUE_SIZE 1024
+#define VRES_CACHE_GROUP_SIZE 256
+#define VRES_CACHE_QUEUE_SIZE 256
+#define VRES_CACHE_ENTRY_SIZE 2
+
+typedef unsigned long vres_cache_entry_t;
 
 typedef struct vres_cache_desc {
-    unsigned long entry[2];
+    vres_cache_entry_t entry[VRES_CACHE_ENTRY_SIZE];
 } vres_cache_desc_t;
 
 typedef struct vres_cache {
     vres_cache_desc_t desc;
-    size_t len;
     struct list_head list;
+    rbtree_node_t node;
+    size_t len;
     char *buf;
 } vres_cache_t;
 
 typedef struct vres_cache_group {
     pthread_mutex_t mutex;
     struct list_head list;
-    rbtree head;
     unsigned long count;
+    rbtree_t tree;
 } vres_cache_group_t;
 
 void vres_cache_init();

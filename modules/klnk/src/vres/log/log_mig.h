@@ -4,10 +4,7 @@
 #include "log.h"
 
 #ifdef LOG_MIG
-#define log_mig(resource, path) do { \
-    log_resource(resource); \
-    log_ln(", path=%s", path); \
-} while (0)
+#define log_mig(resource, path) log_resource_info(resource, "path=%s", path)
 #else
 #define log_mig(...) do {} while (0)
 #endif

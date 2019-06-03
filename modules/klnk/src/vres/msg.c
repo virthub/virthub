@@ -19,15 +19,12 @@ int vres_msg_create(vres_t *resource)
     msq.msg_perm.__key = resource->key;
     msq.msg_ctime = time(0);
     msq.msg_qbytes = VRES_MSGMNB;
-
     vres_get_state_path(resource, path);
     filp = vres_file_open(path, "w");
     if (!filp)
         return -ENOENT;
-
     if (vres_file_write(&msq, sizeof(struct msqid_ds), 1, filp) != 1)
         ret = -EIO;
-
     vres_file_close(filp);
     return ret;
 }
@@ -43,10 +40,8 @@ int vres_msg_check(vres_t *resource, struct msqid_ds *msq)
     filp = vres_file_open(path, "r");
     if (!filp)
         return -ENOENT;
-
     if (vres_file_read(msq, sizeof(struct msqid_ds), 1, filp) != 1)
         ret = -EIO;
-
     vres_file_close(filp);
     return ret;
 }
@@ -62,10 +57,8 @@ int vres_msg_update(vres_t *resource, struct msqid_ds *msq)
     filp = vres_file_open(path, "w");
     if (!filp)
         return -ENOENT;
-
     if (vres_file_write(msq, sizeof(struct msqid_ds), 1, filp) != 1)
         ret = -EIO;
-
     vres_file_close(filp);
     return ret;
 }
@@ -93,13 +86,11 @@ vres_reply_t *vres_msg_msgsnd(vres_req_t *req, int flags)
         ret = -EINVAL;
         goto out;
     }
-
     msgsnd_arg = (vres_msgsnd_arg_t *)req->buf;
     if (req->length < msgsnd_arg->msgsz + sizeof(vres_msgsnd_arg_t) + sizeof(long)) {
         ret = -EINVAL;
         goto out;
     }
-
     msgsz = msgsnd_arg->msgsz;
     msgtyp = msgsnd_arg->msgtyp;
     msgflg = msgsnd_arg->msgflg;
@@ -110,7 +101,6 @@ vres_reply_t *vres_msg_msgsnd(vres_req_t *req, int flags)
         ret = -EFAULT;
         goto out;
     }
-
     if ((msq.msg_cbytes + msgsnd_arg->msgsz > msq.msg_qbytes) || (1 + msq.msg_qnum > msq.msg_qbytes)) {
         if (msgflg & IPC_NOWAIT)
             ret = -EAGAIN;
@@ -122,7 +112,6 @@ vres_reply_t *vres_msg_msgsnd(vres_req_t *req, int flags)
         }
         goto out;
     }
-
     vres_set_op(&res, VRES_OP_MSGRCV);
     vres_get_record_path(&res, path);
     ret = vres_record_first(path, &start);
@@ -144,10 +133,8 @@ vres_reply_t *vres_msg_msgsnd(vres_req_t *req, int flags)
                 break;
         }
     }
-
     if (ret && ret != -ENOENT)
         goto out;
-
     if (index >= 0) {
         vres_id_t src;
 
@@ -165,7 +152,6 @@ vres_reply_t *vres_msg_msgsnd(vres_req_t *req, int flags)
                 ret = -ENOMEM;
                 goto release;
             }
-
             msq.msg_stime = time(0);
             msq.msg_rtime = msq.msg_stime;
             msq.msg_lspid = vres_get_id(resource);
@@ -211,7 +197,7 @@ release:
     }
 out:
     vres_create_reply(vres_msgsnd_result_t, ret, reply);
-    msg_log(resource);
+    log_msg(resource);
     return reply;
 }
 
@@ -237,18 +223,15 @@ vres_reply_t *vres_msg_msgrcv(vres_req_t *req, int flags)
         ret = -EINVAL;
         goto out;
     }
-
     if (req->length < sizeof(vres_msgrcv_arg_t)) {
         ret = -EINVAL;
         goto out;
     }
-
     msgrcv_arg = (vres_msgrcv_arg_t *)req->buf;
     msgflg = msgrcv_arg->msgflg;
     msgsz = msgrcv_arg->msgsz;
     msgtyp = msgrcv_arg->msgtyp;
     mode = vres_msg_convert_mode(&msgtyp, msgflg);
-
     vres_set_op(&dest, VRES_OP_MSGSND);
     vres_get_record_path(&dest, path);
     ret = vres_record_first(path, &start);
@@ -258,7 +241,6 @@ vres_reply_t *vres_msg_msgrcv(vres_req_t *req, int flags)
             ret = vres_record_get(path, start, &record);
             if (ret)
                 goto out;
-
             msgsnd_arg = (vres_msgsnd_arg_t *)record.req->buf;
             if (vres_msgtyp_cmp(msgsnd_arg->msgtyp, msgtyp, mode)) {
                 index = start;
@@ -273,7 +255,6 @@ vres_reply_t *vres_msg_msgrcv(vres_req_t *req, int flags)
                 break;
         }
     }
-
     if (-ENOENT == ret) {
         if (index >= 0) {
             ret = vres_record_get(path, index, &record);
@@ -282,7 +263,6 @@ vres_reply_t *vres_msg_msgrcv(vres_req_t *req, int flags)
         }
     } else if (ret)
         goto out;
-
     if (index >= 0) {
         msgsnd_arg = (vres_msgsnd_arg_t *)record.req->buf;
         if ((msgsnd_arg->msgsz <= msgsz) || (msgflg & MSG_NOERROR)) {
@@ -296,12 +276,10 @@ vres_reply_t *vres_msg_msgrcv(vres_req_t *req, int flags)
                 vres_record_put(&record);
                 goto out;
             }
-
             if ((record.req->length > VRES_BUF_MAX) || (record.req->length < 0)) {
                 ret = -EINVAL;
                 goto release;
             }
-
             bytes_read = sizeof(long) + (msgsnd_arg->msgsz > msgsz ? msgsz : msgsnd_arg->msgsz);
             outlen = sizeof(vres_msgrcv_result_t) + bytes_read;
             reply = vres_reply_alloc(outlen);
@@ -309,7 +287,6 @@ vres_reply_t *vres_msg_msgrcv(vres_req_t *req, int flags)
                 ret = -ENOMEM;
                 goto release;
             }
-
             result = vres_result_check(reply, vres_msgrcv_result_t);
             result->retval = bytes_read - sizeof(long);
             memcpy(&result[1], &record.req->buf[sizeof(vres_msgsnd_arg_t)], bytes_read);
@@ -340,7 +317,7 @@ release:
 out:
     if (!reply)
         vres_create_reply(vres_msgrcv_result_t, ret, reply);
-    msg_log(resource);
+    log_msg(resource);
     return reply;
 }
 
@@ -358,7 +335,6 @@ vres_reply_t *vres_msg_msgctl(vres_req_t *req, int flags)
 
     if ((flags & VRES_CANCEL) || (req->length < sizeof(vres_msgctl_arg_t)))
         return vres_reply_err(-EINVAL);
-
     switch (cmd) {
     case IPC_INFO:
     case MSG_INFO:
@@ -371,18 +347,14 @@ vres_reply_t *vres_msg_msgctl(vres_req_t *req, int flags)
         ret = vres_msg_check(resource, &msq);
         break;
     }
-
     if (!ret) {
         reply = vres_reply_alloc(outlen);
         if (!reply)
             ret = -ENOMEM;
     }
-
     if (ret)
         return vres_reply_err(ret);
-
     result = vres_result_check(reply, vres_msgctl_result_t);
-
     switch (cmd) {
     case IPC_INFO:
     case MSG_INFO:
@@ -398,7 +370,6 @@ vres_reply_t *vres_msg_msgctl(vres_req_t *req, int flags)
         msginfo->msgmap = VRES_MSGMAP;
         msginfo->msgpool = VRES_MSGPOOL;
         msginfo->msgtql = VRES_MSGTQL;
-
         if (MSG_INFO == cmd) {
             msginfo->msgpool = vres_get_resource_count(VRES_CLS_MSG);
             //TODO: set 1) msginfo->msgmap and 2) msginfo->msgtql

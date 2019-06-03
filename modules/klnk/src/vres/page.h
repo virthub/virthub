@@ -6,34 +6,31 @@
 #include <pthread.h>
 #include <sys/mman.h>
 #include "member.h"
-#include "rbtree.h"
+#include "common.h"
 #include "line.h"
-#include "util.h"
 #include "file.h"
 
 #define VRES_PAGE_RDONLY          VRES_RDONLY
 #define VRES_PAGE_RDWR            VRES_RDWR
 #define VRES_PAGE_CREAT           VRES_CREAT
-#define VRES_PAGE_OWN             VRES_OWN
+#define VRES_PAGE_OWN             VRES_CHOWN
 #define VRES_PAGE_CAND            VRES_CAND
 #define VRES_PAGE_REDO            VRES_REDO
+
 #define VRES_PAGE_READY           0x00010000
 #define VRES_PAGE_ACTIVE          0x00020000
 #define VRES_PAGE_WAIT            0x00040000
 #define VRES_PAGE_UPDATE          0x00080000
 #define VRES_PAGE_EXCL            0x00100000
-#define VRES_PAGE_UPTODATE        0x00200000
+#define VRES_PAGE_CURR            0x00200000
 #define VRES_PAGE_SAVE            0x00400000
 
-#define VRES_PAGE_LOCK_GROUP_SIZE 1024
 #define VRES_PAGE_DIFF_SIZE       ((VRES_PAGE_NR_VERSIONS * VRES_LINE_MAX + BITS_PER_BYTE - 1) / BITS_PER_BYTE)
+#define VRES_PAGE_LOCK_GROUP_SIZE 1024
+#define VRES_PAGE_LOCK_ENTRY_SIZE 2
 
 #define VRES_PAGE_NR_VERSIONS     16
-#ifdef NO_MANAGER
 #define VRES_PAGE_NR_CANDIDATES   16
-#else
-#define VRES_PAGE_NR_CANDIDATES   0
-#endif
 #define VRES_PAGE_NR_HOLDERS      16
 #define VRES_PAGE_NR_HITS         4
 
@@ -52,19 +49,22 @@
 
 #include "log_page.h"
 
+typedef unsigned long vres_page_lock_entry_t;
+
 typedef struct vres_page_lock_desc {
-    unsigned long entry[2];
+    vres_page_lock_entry_t entry[VRES_PAGE_LOCK_ENTRY_SIZE];
 } vres_page_lock_desc_t;
 
 typedef struct vres_page_lock_group {
     pthread_mutex_t mutex;
-    rbtree head;
+    rbtree_t tree;
 } vres_page_lock_group_t;
 
 typedef struct vres_page_lock {
     vres_page_lock_desc_t desc;
     pthread_mutex_t mutex;
     pthread_cond_t cond;
+    rbtree_node_t node;
     int count;
 } vres_page_lock_t;
 
@@ -73,7 +73,7 @@ typedef struct vres_page {
     vres_digest_t digest[VRES_LINE_MAX];
     vres_index_t index;
     vres_clk_t clk;
-    int hid;            // the id of holder
+    int hid; // the id of holder
     int flags;
     int count;
     int nr_holders;
@@ -134,9 +134,9 @@ static inline void vres_pg_mkupdate(vres_page_t *page)
     page->flags |= VRES_PAGE_UPDATE;
 }
 
-static inline void vres_pg_mkuptodate(vres_page_t *page)
+static inline void vres_pg_mkcurr(vres_page_t *page)
 {
-    page->flags |= VRES_PAGE_UPTODATE;
+    page->flags |= VRES_PAGE_CURR;
 }
 
 static inline void vres_pg_mkpgsave(vres_page_t *page)
@@ -179,9 +179,9 @@ static inline void vres_pg_clrupdate(vres_page_t *page)
     page->flags &= ~VRES_PAGE_UPDATE;
 }
 
-static inline void vres_pg_clruptodate(vres_page_t *page)
+static inline void vres_pg_clrcurr(vres_page_t *page)
 {
-    page->flags &= ~VRES_PAGE_UPTODATE;
+    page->flags &= ~VRES_PAGE_CURR;
 }
 
 static inline void vres_pg_clrpgsave(vres_page_t *page)
@@ -251,9 +251,9 @@ static inline int vres_pg_update(vres_page_t *page)
     return page->flags & VRES_PAGE_UPDATE;
 }
 
-static inline int vres_pg_uptodate(vres_page_t *page)
+static inline int vres_pg_curr(vres_page_t *page)
 {
-    return page->flags & VRES_PAGE_UPTODATE;
+    return page->flags & VRES_PAGE_CURR;
 }
 
 static inline int vres_pg_pgsave(vres_page_t *page)
@@ -261,20 +261,18 @@ static inline int vres_pg_pgsave(vres_page_t *page)
     return page->flags & VRES_PAGE_SAVE;
 }
 
+void vres_page_lock_init();
 int vres_page_calc_holders(vres_page_t *page);
+void vres_page_put(vres_t *resource, void *entry);
 int vres_page_update(vres_page_t *page, char *buf);
 int vres_page_get_hid(vres_page_t *page, vres_id_t id);
+vres_index_t vres_page_update_index(vres_page_t *page);
 int vres_page_protect(vres_t *resource, vres_page_t *page);
+void *vres_page_get(vres_t *resource, vres_page_t **page, int flags);
+void vres_page_clear_holder_list(vres_t *resource, vres_page_t *page);
 int vres_page_add_holder(vres_t *resource, vres_page_t *page, vres_id_t id);
 int vres_page_get_diff(vres_page_t *page, vres_version_t version, int *diff);
 int vres_page_search_holder_list(vres_t *resource, vres_page_t *page, vres_id_t id);
 int vres_page_update_holder_list(vres_t *resource, vres_page_t *page, vres_id_t *holders, int nr_holders);
-
-void vres_page_lock_init();
-void vres_page_put(vres_t *resource, void *entry);
-void *vres_page_get(vres_t *resource, vres_page_t **page, int flags);
-void vres_page_clear_holder_list(vres_t *resource, vres_page_t *page);
-
-vres_index_t vres_page_update_index(vres_page_t *page);
 
 #endif

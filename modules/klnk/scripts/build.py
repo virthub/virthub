@@ -5,6 +5,7 @@ import shutil
 import platform
 from subprocess import check_output, call
 
+GDB = True
 DEVNULL = open(os.devnull, 'wb')
 
 def _get_home_dir():
@@ -135,7 +136,10 @@ def _conf_proj():
     lines.append('LDFLAGS = -L/usr/local/lib\n')
     if LIBS:
         lines.append('LIBS = %s\n' % ' '.join(["-l%s" % i for i in LIBS]))
-    cflags = 'AM_CFLAGS = -I/usr/local/include -I./include -I./src -Wno-unused-result'
+    if not GDB:
+        cflags = 'AM_CFLAGS = -I/usr/local/include -I./include -I./src -Wno-unused-result'
+    else:
+        cflags = 'AM_CFLAGS = -ggdb -I/usr/local/include -I./include -I./src -Wno-unused-result'
     if INCL:
         cflags += ' %s' % ' '.join(['-I%s' % i for i in INCL])
     if libs:

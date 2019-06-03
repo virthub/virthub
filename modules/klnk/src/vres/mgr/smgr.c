@@ -9,11 +9,11 @@
 
 int vres_smgr_get_owner(vres_t *resource)
 {
-    return (vres_get_off(resource) % vres_nr_managers) + 1;
+    return (vres_get_off(resource) % vres_nr_managers) + 1; // the id of manager is from 1 to vres_nr_managers
 }
 
 
-int vres_smgr_is_owner(vres_t *resource)
+bool vres_smgr_is_owner(vres_t *resource)
 {
     return resource->owner == vres_smgr_get_owner(resource);
 }
@@ -21,72 +21,11 @@ int vres_smgr_is_owner(vres_t *resource)
 
 int vres_smgr_get_peers(vres_t *resource, vres_page_t *page, vres_peers_t *peers)
 {
-    if (!vres_pg_own(page)) {
-        vres_id_t owner = vres_smgr_get_owner(resource);
+    vres_id_t owner = vres_smgr_get_owner(resource);
 
-        peers->list[0] = owner;
-        peers->total = 1;
-    } else {
-        int flags = vres_get_flags(resource);
-
-        if (flags & VRES_RDWR) {
-            int i;
-            int cnt = 0;
-
-            for (i = 0; i < page->nr_holders; i++) {
-                if (page->holders[i] != resource->owner) {
-                    peers->list[cnt] = page->holders[i];
-                    cnt++;
-                }
-            }
-            peers->total = cnt;
-        } else {
-            peers->list[0] = page->holders[0];
-            peers->total = 1;
-        }
-    }
-
+    peers->list[0] = owner;
+    peers->total = 1;
     return 0;
-}
-
-
-int vres_smgr_request_holders(vres_page_t *page, vres_req_t *req)
-{
-    int i;
-    int ret = 0;
-    int cnt = 0;
-    int nr_threads = 1;
-    pthread_t *threads;
-    vres_t *resource = &req->resource;
-    int flags = vres_get_flags(resource);
-    vres_id_t src = vres_get_id(resource);
-
-    if (flags & VRES_RDWR)
-        nr_threads = page->nr_holders;
-
-    threads = malloc(nr_threads * sizeof(pthread_t));
-    if (!threads) {
-        log_resource_err(resource, "no memory");
-        return -ENOMEM;
-    }
-
-    for (i = 0; i < page->nr_holders; i++) {
-        if ((page->holders[i] != src) && (page->holders[i] != resource->owner)) {
-            ret = klnk_io_async(resource, req->buf, req->length, NULL, 0, &page->holders[i], &threads[cnt]);
-            if (ret) {
-                log_resource_err(resource, "failed to send request");
-                break;
-            }
-            cnt++;
-            if (cnt == nr_threads)
-                break;
-        }
-    }
-
-    for (i = 0; i < cnt; i++)
-        pthread_join(threads[i], NULL);
-    free(threads);
-    return ret;
 }
 
 
@@ -103,12 +42,10 @@ int vres_smgr_create(vres_t *resource)
         log_resource_err(resource, "failed to create");
         return -ENOENT;
     }
-
     if (vres_file_write((char *)&shmid_ds, sizeof(struct shmid_ds), 1, filp) != 1) {
         vres_file_close(filp);
         return -EIO;
     }
-
     vres_file_close(filp);
     return 0;
 }
@@ -121,36 +58,24 @@ int vres_smgr_check_resource(vres_t *resource)
     vres_get_path(resource, path);
     if (!vres_file_is_dir(path)) {
         if (VRES_CLS_SHM == resource->cls) {
-            vres_check_path(resource);
+            vres_mkdir(resource);
+#ifdef CHECK_PRIORITY
+            vres_prio_create(resource, true);
+#endif
             vres_smgr_create(resource);
         } else
             return -ENOOWNER;
     }
-
     return 0;
 }
 
 
-void vres_smgr_check_reply(vres_t *resource, vres_page_t *page, int total, int *head, int *tail, int *reply)
+bool vres_smgr_check_sched(vres_t *resource, vres_page_t *page)
 {
     int flags = vres_get_flags(resource);
-    vres_id_t src = vres_get_id(resource);
 
-    *reply = flags & VRES_RDWR;
-    if (page->holders[0] != src)
-        *head = page->hid == 1;
+    if (vres_pg_own(page) && (vres_pg_write(page) || (flags & VRES_RDWR)))
+        return true;
     else
-        *head = page->hid == 2;
-    *tail = *head;
-}
-
-
-int vres_smgr_check_coverage(vres_t *resource, vres_page_t *page, int line)
-{
-    vres_id_t src = vres_get_id(resource);
-
-    if (page->holders[0] != src)
-        return page->hid == 1;
-    else
-        return page->hid == 2;
+        return false;
 }

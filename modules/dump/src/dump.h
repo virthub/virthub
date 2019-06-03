@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
-#include "vres.h"
+#include <vres.h>
 #include "ckpt.h"
 #include "log.h"
 

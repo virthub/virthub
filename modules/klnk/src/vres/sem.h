@@ -25,15 +25,10 @@
 
 #ifdef SHOW_SEM
 #define LOG_SEM_SEMOP
+#define LOG_SEM_SEMCTL
 #endif
 
 #include "log_sem.h"
-
-#ifdef SHOW_SEM
-#define sem_log log_resource
-#else
-#define sem_log(...) do {} while(0)
-#endif
 
 #define vres_semundo_size(un) (sizeof(vres_semundo_t) + (un)->nsems * sizeof(short))
 #define vres_sma_size(nsems) (sizeof(struct vres_sem_array ) + nsems * sizeof(struct vres_sem))
@@ -85,10 +80,9 @@ struct vres_sem_array {
   struct vres_sem    sem_base[0];  /* ptr to first semaphore in array */
 };
 
+void vres_sem_exit(vres_req_t *req);
 int vres_sem_create(vres_t *resource);
 int vres_sem_get_arg(vres_t *resource, vres_arg_t *arg);
-
-void vres_sem_exit(vres_req_t *req);
 vres_reply_t *vres_sem_semop(vres_req_t *req, int flags);
 vres_reply_t *vres_sem_semctl(vres_req_t *req, int flags);
 

@@ -30,18 +30,21 @@
 
 #define VRES_SHM_NR_AREAS            3
 #define VRES_SHM_NR_VISITS           1
-#define VRES_SHM_TTL_MAX             12
+#define VRES_SHM_TTL_MAX             64
 
 #ifdef SHOW_SHM
+#define LOG_SHM_OWNER
+#define LOG_SHM_DELIVER
 #define LOG_SHM_GET_ARGS
 #define LOG_SHM_FAST_REPLY
+#define LOG_SHM_CHECK_REPLY
 #define LOG_SHM_CHECK_OWNER
 #define LOG_SHM_CHECK_HOLDER
 #define LOG_SHM_NOTIFY_OWNER
 #define LOG_SHM_REQUEST_OWNER
+#define LOG_SHM_GET_PEER_INFO
 #define LOG_SHM_NOTIFY_HOLDER
 #define LOG_SHM_NOTIFY_PROPOSER
-#define LOG_SHM_DELIVER_EVENT
 #define LOG_SHM_EXPIRED_REQ
 #define LOG_SHM_SAVE_PAGE
 #define LOG_SHM_SAVE_REQ
@@ -50,7 +53,6 @@
 #ifdef SHOW_MORE
 #define LOG_SHM_CHECK_ARGS
 #define LOG_SHM_CHECK_FAST_REPLY
-#define LOG_SHM_SILENT_HOLDERS
 #define LOG_SHM_HANDLE_ZEROPAGE
 #define LOG_SHM_SAVE_UPDATES
 #define LOG_SHM_CLOCK_UPDATE
@@ -63,12 +65,10 @@
 
 #include "log_shm.h"
 
-#ifdef NO_MANAGER
 #define CHECK_TTL
 #define FAST_REPLY
 #define DYNAMIC_OWNER
 #define CHECK_PRIORITY
-#endif
 
 #ifdef CHECK_PRIORITY
 #define SYNC_TIME
@@ -77,7 +77,7 @@
 
 #define vres_shm_is_silent_holder(page) (!(page)->hid)
 
-enum vres_shm_operations {
+enum vres_shm_cmd {
     VRES_SHM_UNUSED0,
     VRES_SHM_PROPOSE,
     VRES_SHM_CHK_OWNER,
@@ -85,7 +85,7 @@ enum vres_shm_operations {
     VRES_SHM_NOTIFY_OWNER,
     VRES_SHM_NOTIFY_HOLDER,
     VRES_SHM_NOTIFY_PROPOSER,
-    VRES_SHM_NR_OPERATIONS,
+    VRES_SHM_NR_COMMANDS,
 };
 
 typedef struct vres_shmfault_arg {
@@ -111,8 +111,7 @@ typedef struct vres_shmfault_result {
 
 typedef struct vres_shm_peer_info {
     int total;
-    vres_desc_t owner;
-    vres_desc_t list[0];
+    vres_id_t list[0];
 } vres_shm_peer_info_t;
 
 typedef struct vres_shm_notify_proposer_arg {
@@ -140,12 +139,11 @@ int vres_shm_call(vres_arg_t *arg);
 int vres_shm_init(vres_t *resource);
 int vres_shm_create(vres_t *resource);
 int vres_shm_destroy(vres_t *resource);
+void vres_shm_put_arg(vres_arg_t *arg);
 int vres_shm_check_arg(vres_arg_t *arg);
 int vres_shm_get_arg(vres_t *resource, vres_arg_t *arg);
-int vres_shm_save_page(vres_t *resource, char *buf, size_t size);
-
-void vres_shm_put_arg(vres_arg_t *arg);
 vres_reply_t *vres_shm_fault(vres_req_t *req, int flags);
 vres_reply_t *vres_shm_shmctl(vres_req_t *req, int flags);
+int vres_shm_save_page(vres_t *resource, char *buf, size_t size);
 
 #endif

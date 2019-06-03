@@ -16,30 +16,36 @@ int vres_tsk_get(vres_t *resource, vres_id_t *id)
     vres_id_t curr = resource->key;
     vres_t *tsk = &res;
 
+#if MANAGER_TYPE == NO_MANAGER
+    assert(resource->key >= TSK_ID_START);
+#endif
+    assert((vres_get_id(resource) == resource->owner) && (resource->key == resource->owner));
     for (i = 0; i < retry_max; i++) {
         vres_lock(tsk);
         ret = vres_create(tsk);
+#ifdef TSK_REALLOC
         if (ret) {
             vres_unlock(tsk);
             if (ret == -EEXIST) {
                 if (curr < VRES_ID_MAX)
                     curr += 1;
                 else
-                    curr = 1;
+                    curr = TSK_ID_START;
                 tsk->key = curr;
                 tsk->owner = curr;
                 continue;
             }
         }
+#endif
         break;
     }
     if (ret) {
-        log_err("failed to register");
-        return ret;
+        log_err("failed to register, ret=%s", log_get_err(ret));
+        goto out;
     }
-    ret = vres_check_path(tsk);
+    ret = vres_mkdir(tsk);
     if (ret) {
-        log_err("faild to check path");
+        log_err("faild to create directory, ret=%s", log_get_err(ret));
         vres_remove(tsk);
     } else if (id) {
         vres_file_t *filp;
@@ -51,8 +57,8 @@ int vres_tsk_get(vres_t *resource, vres_id_t *id)
         if (!filp)
             ret = -ENOENT;
         vres_file_close(filp);
-        return ret;
     }
+out:
     vres_unlock(tsk);
     return ret;
 }
@@ -72,12 +78,12 @@ void *vres_tsk_request(void *ptr)
     vres_tsk_req_t *req = (vres_tsk_req_t *)ptr;
     vres_t *resource = &req->resource;
 
-    if (TSK_WAKEUP == req->cmd) {
+    if (VRES_TSK_WAKEUP == req->cmd) {
         vres_tskctl_arg_t arg;
         vres_tskctl_result_t result;
 
         vres_set_op(resource, VRES_OP_TSKCTL);
-        arg.cmd = TSK_WAKEUP;
+        arg.cmd = VRES_TSK_WAKEUP;
         klnk_io_direct(resource, (char *)&arg, sizeof(vres_tskctl_arg_t), (char *)&result, sizeof(vres_tskctl_result_t), req->addr);
     }
     free(ptr);
@@ -130,7 +136,7 @@ int vres_tsk_put(vres_t *resource)
             }
             memcpy(&req->resource, tsk, sizeof(vres_t));
             memcpy(&req->addr, addr, sizeof(vres_addr_t));
-            req->cmd = TSK_WAKEUP;
+            req->cmd = VRES_TSK_WAKEUP;
             pthread_attr_init(&attr);
             pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
             pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM);
@@ -248,7 +254,7 @@ vres_reply_t *vres_tsk_tskctl(vres_req_t *req, int flags)
     vres_t *resource = &req->resource;
     vres_tskctl_arg_t *arg = (vres_tskctl_arg_t *)req->buf;
 
-    if (TSK_WAKEUP == arg->cmd)
+    if (VRES_TSK_WAKEUP == arg->cmd)
         ret = vres_tsk_wakeup(resource);
     else {
         log_resource_err(resource, "invalid cmd");

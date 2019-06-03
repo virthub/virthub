@@ -21,7 +21,6 @@ void node_init()
 
     if (node_stat)
         return;
-
     node_ctx = redisConnect(master_addr, MDS_PORT);
     if (!node_ctx || node_ctx->err) {
         if (node_ctx) {
@@ -31,7 +30,6 @@ void node_init()
             log_err("no context");
       exit(1);
     }
-
     if (strlen(node_name) + strlen(NODE_PREFIX) >= NODE_PATH_MAX) {
         log_err("invalid node name");
         exit(1);
@@ -63,7 +61,6 @@ int node_list(struct in_addr **nodes)
         log_err("invalid state");
         return -EINVAL;
     }
-
     *nodes = NULL;
     reply = redisCommand(node_ctx, "KEYS %s*", NODE_PREFIX);
     if ((REDIS_REPLY_ERROR == reply->type)
@@ -71,18 +68,15 @@ int node_list(struct in_addr **nodes)
         log_err("invalid reply");
         return -EINVAL;
     }
-
     total = reply->elements;
     if (!total)
         goto out;
-
     list = (struct in_addr *)malloc(total * sizeof(struct in_addr));
     if (!list) {
         log_err("no memory");
         ret = -ENOMEM;
         goto out;
     }
-
     for (i = 0; i < total; i++) {
         if ((strlen(reply->element[i]->str) >= NODE_PATH_MAX) ||
             strncmp(reply->element[i]->str, NODE_PREFIX, strlen(NODE_PREFIX))) {
@@ -99,13 +93,11 @@ int node_list(struct in_addr **nodes)
                 ret = -EINVAL;
             }
         }
-
         if (ret) {
             free(list);
             goto out;
         }
     }
-
     ret = total;
     *nodes = list;
     log_node_list(list, total);

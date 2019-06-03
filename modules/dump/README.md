@@ -5,7 +5,7 @@
 * Run->*build.sh*
 
 ### 2. Configure
-The configurations of DUMP are contained in *build.cfg*.
+The configurations of DUMP are contained in *conf/build.cfg*.
 
 # Dependencies
 * aclocal, autoconf, autoheader, automake, autoreconf

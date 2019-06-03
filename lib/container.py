@@ -18,6 +18,7 @@ from lib.util import ifaddr, killall, mkdirs, popen, rmdir, get_home, bind, umou
 from env import PATH_LXC_LIB, PATH_LXC_ROOT, PATH_BIN, PATH_MNT, PATH_RUN, PATH_VAR
 
 PRINT = True
+SHOW_CMD = False
 LXC_NAME = 'lxc'
 AA_ALLOW_INCOMPLETE = False
 AA_PROFILE_UNCONFINED = True
@@ -124,8 +125,9 @@ def _start_container(name):
         log('failed to start container')
         raise Exception('failed to start container')
     cfg = os.path.join(PATH_LXC_LIB, name, 'config')
-    cmd = ['lxc-start', '-F', '-p', _get_path_run(name), '-n', name, '-f', cfg, '--share-ipc', str(pid), '-o', _get_log_path(name), '-c', '/dev/null']
-    # _log('%s' % cmd)
+    cmd = ['lxc-start', '-F', '-P', PATH_LXC_LIB, '-p', _get_path_run(name), '-n', name, '-f', cfg, '--share-ipc', str(pid), '-o', _get_log_path(name), '-c', '/dev/null']
+    if SHOW_CMD:
+        _log('%s' % ' '.join(cmd))
     popen(cmd)
     os.system('lxc-wait -n %s -s "RUNNING"' % name)
     os.system('lxc-device add -n %s /dev/ckpt' % name)

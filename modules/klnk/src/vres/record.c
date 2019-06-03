@@ -18,10 +18,8 @@ int vres_record_check(char *path, vres_index_t index, vres_rec_hdr_t *hdr)
     filp = vres_file_open(name, "r");
     if (!filp)
         return -ENOENT;
-
     if (vres_file_read(hdr, sizeof(vres_rec_hdr_t), 1, filp) != 1)
         ret = -EIO;
-
     vres_file_close(filp);
     return ret;
 }
@@ -85,13 +83,11 @@ int vres_record_save(char *path, vres_req_t *req, vres_index_t *index)
         if (req->length > 0)
             memcpy(&preq[1], req->buf, req->length);
     }
-
     // update index
     if (*curr + 1 >= VRES_INDEX_MAX)
         *curr = 0;
     else
         *curr = *curr + 1;
-
     vres_file_put_entry(record);
     vres_file_put_entry(checkin);
     log_record_save(req, name);
@@ -110,10 +106,8 @@ int vres_record_update(char *path, vres_index_t index, vres_rec_hdr_t *hdr)
     filp = vres_file_open(name, "r+");
     if (!filp)
         return -ENOENT;
-
     if (vres_file_write(hdr, sizeof(vres_rec_hdr_t), 1, filp) != 1)
         ret = -EIO;
-
     vres_file_close(filp);
     return ret;
 }
@@ -184,7 +178,6 @@ int vres_record_remove(char *path, vres_index_t index)
     if (!entry)
         return -ENOENT;
     curr = vres_file_get_desc(entry, int);
-
     if (*curr != index) {
         hdr.flg = VRES_RECORD_FREE;
         ret = vres_record_update(path, index, &hdr);
@@ -217,7 +210,7 @@ int vres_record_remove(char *path, vres_index_t index)
 }
 
 
-int vres_record_is_empty(char *path)
+int vres_record_empty_check(char *path)
 {
     int ret;
     vres_index_t index;
@@ -226,7 +219,8 @@ int vres_record_is_empty(char *path)
     if (ret) {
         if (-ENOENT == ret)
             return 1;
-        return -EINVAL;
+        else
+            return -EINVAL;
     } else
         return 0;
 }

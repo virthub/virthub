@@ -27,7 +27,7 @@ int vres_redo_req(vres_req_t *req, vres_index_t index, int flags)
         }
         free(reply);
     }
-    log_redo_req(resource, req->buf, index);
+    log_redo_req(resource, req->buf, index, ret);
     return ret;
 }
 
@@ -40,6 +40,7 @@ int vres_redo(vres_t *resource, int flags)
     char path[VRES_PATH_MAX];
 
     vres_get_record_path(resource, path);
+    log_redo(resource, "*start*");
     ret = vres_record_first(path, &index);
     while (!ret) {
         ret = vres_record_get(path, index, &record);
@@ -53,6 +54,7 @@ int vres_redo(vres_t *resource, int flags)
             vres_record_remove(path, index);
         ret = vres_record_next(path, &index);
     }
+    log_redo(resource, "*finished*");
     return 0;
 }
 
@@ -68,9 +70,11 @@ int vres_redo_all(vres_t *resource, int flags)
     char *pend;
 
     vres_get_path(resource, path);
-    if (!vres_file_is_dir(path))
+    if (!vres_file_is_dir(path)) {
+        log_resource_err(resource, "failed to redo all, cannot get the path of the resource");
         return -ENOENT;
-
+    }
+    log_redo_all(resource, "*start*");
     pend = path + strlen(path);
     nr_queues = vres_get_nr_queues(resource->cls);
     for (i = 0; i < nr_queues; i++) {
@@ -91,6 +95,6 @@ int vres_redo_all(vres_t *resource, int flags)
         }
         pend[0] = '\0';
     }
-
+    log_redo_all(resource, "*finished*");
     return 0;
 }

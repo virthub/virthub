@@ -10,6 +10,16 @@
 int mutex_stat = 0;
 klnk_mutex_group_t mutex_group[KLNK_MUTEX_GROUP_SIZE];
 
+int klnk_mutex_compare(const void *val0, const void *val1)
+{
+    klnk_mutex_entry_t *ent0 = ((klnk_mutex_desc_t *)val0)->entry;
+    klnk_mutex_entry_t *ent1 = ((klnk_mutex_desc_t *)val1)->entry;
+    size_t size = KLNK_MUTEX_ENTRY_SIZE * sizeof(klnk_mutex_entry_t);
+
+    return memcmp(ent0, ent1, size);
+}
+
+
 void klnk_mutex_init()
 {
     int i;
@@ -19,7 +29,7 @@ void klnk_mutex_init()
 
     for (i = 0; i < KLNK_MUTEX_GROUP_SIZE; i++) {
         pthread_mutex_init(&mutex_group[i].mutex, NULL);
-        mutex_group[i].head = rbtree_create();
+        rbtree_new(&mutex_group[i].tree, klnk_mutex_compare);
     }
     mutex_stat = 1;
 }
@@ -27,18 +37,10 @@ void klnk_mutex_init()
 
 static inline unsigned long klnk_mutex_hash(klnk_mutex_desc_t *desc)
 {
-    unsigned long *ent = desc->entry;
+    klnk_mutex_entry_t *ent = desc->entry;
 
+    assert(KLNK_MUTEX_ENTRY_SIZE == 4);
     return (ent[0] ^ ent[1] ^ ent[2] ^ ent[3]) % KLNK_MUTEX_GROUP_SIZE;
-}
-
-
-static inline int klnk_mutex_compare(char *m1, char *m2)
-{
-    klnk_mutex_desc_t *desc1 = (klnk_mutex_desc_t *)m1;
-    klnk_mutex_desc_t *desc2 = (klnk_mutex_desc_t *)m2;
-
-    return memcmp(desc1->entry, desc2->entry, sizeof(((klnk_mutex_desc_t *)0)->entry));
 }
 
 
@@ -71,13 +73,18 @@ static inline klnk_mutex_t *klnk_mutex_alloc(klnk_mutex_desc_t *desc)
 
 static inline klnk_mutex_t *klnk_mutex_lookup(klnk_mutex_group_t *group, klnk_mutex_desc_t *desc)
 {
-    return rbtree_lookup(group->head, (void *)desc, klnk_mutex_compare);
+    rbtree_node_t *node = NULL;
+
+    if (!rbtree_find(&group->tree, desc, &node))
+        return tree_entry(node, klnk_mutex_t, node);
+    else
+        return NULL;
 }
 
 
 static inline void klnk_mutex_insert(klnk_mutex_group_t *group, klnk_mutex_t *mutex)
 {
-    rbtree_insert(group->head, (void *)&mutex->desc, (void *)mutex, klnk_mutex_compare);
+    rbtree_insert(&group->tree, &mutex->desc, &mutex->node);
 }
 
 
@@ -107,7 +114,7 @@ out:
 
 static void klnk_mutex_free(klnk_mutex_group_t *group, klnk_mutex_t *mutex)
 {
-    rbtree_delete(group->head, (void *)&mutex->desc, klnk_mutex_compare);
+    rbtree_remove(&group->tree, &mutex->desc);
     pthread_mutex_destroy(&mutex->mutex);
     pthread_cond_destroy(&mutex->cond);
     free(mutex);
@@ -119,7 +126,7 @@ int klnk_mutex_lock(vres_t *resource)
     klnk_mutex_t *mutex;
 
     if (!mutex_stat) {
-        klnk_log_err("invalid state");
+        log_err("invalid state");
         return -EINVAL;
     }
 
@@ -142,7 +149,7 @@ void klnk_mutex_unlock(vres_t *resource)
     klnk_mutex_group_t *grp;
 
     if (!mutex_stat) {
-        klnk_log_err("invalid state");
+        log_err("invalid state");
         return;
     }
     klnk_mutex_get_desc(resource, &desc);

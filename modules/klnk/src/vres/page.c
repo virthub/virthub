@@ -10,6 +10,16 @@
 int vres_page_lock_stat = 0;
 vres_page_lock_group_t vres_page_lock_group[VRES_PAGE_LOCK_GROUP_SIZE];
 
+int vres_page_lock_compare(const void *val0, const void *val1)
+{
+    vres_page_lock_entry_t *ent0 = ((vres_page_lock_desc_t *)val0)->entry;
+    vres_page_lock_entry_t *ent1 = ((vres_page_lock_desc_t *)val1)->entry;
+    const size_t size = VRES_PAGE_LOCK_ENTRY_SIZE * sizeof(vres_page_lock_entry_t);
+
+    return memcmp(ent0, ent1, size);
+}
+
+
 void vres_page_lock_init()
 {
     int i;
@@ -19,7 +29,7 @@ void vres_page_lock_init()
 
     for (i = 0; i < VRES_PAGE_LOCK_GROUP_SIZE; i++) {
         pthread_mutex_init(&vres_page_lock_group[i].mutex, NULL);
-        vres_page_lock_group[i].head = rbtree_create();
+        rbtree_new(&vres_page_lock_group[i].tree, vres_page_lock_compare);
     }
     vres_page_lock_stat |= VRES_STAT_INIT;
 }
@@ -27,18 +37,10 @@ void vres_page_lock_init()
 
 static inline unsigned long vres_page_lock_hash(vres_page_lock_desc_t *desc)
 {
-    unsigned long *ent = desc->entry;
+    vres_page_lock_entry_t *ent = desc->entry;
 
+    assert(VRES_PAGE_LOCK_ENTRY_SIZE == 2);
     return (ent[0] ^ ent[1]) % VRES_PAGE_LOCK_GROUP_SIZE;
-}
-
-
-static inline int vres_page_lock_compare(char *l1, char *l2)
-{
-    vres_page_lock_desc_t *desc1 = (vres_page_lock_desc_t *)l1;
-    vres_page_lock_desc_t *desc2 = (vres_page_lock_desc_t *)l2;
-
-    return memcmp(desc1->entry, desc2->entry, sizeof(((vres_page_lock_desc_t *)0)->entry));
 }
 
 
@@ -66,13 +68,18 @@ static inline vres_page_lock_t *vres_page_lock_alloc(vres_page_lock_desc_t *desc
 
 static inline vres_page_lock_t *vres_page_lock_lookup(vres_page_lock_group_t *group, vres_page_lock_desc_t *desc)
 {
-    return rbtree_lookup(group->head, (void *)desc, vres_page_lock_compare);
+    rbtree_node_t *node = NULL;
+
+    if (!rbtree_find(&group->tree, desc, &node))
+        return tree_entry(node, vres_page_lock_t, node);
+    else
+        return NULL;
 }
 
 
 static inline void vres_page_lock_insert(vres_page_lock_group_t *group, vres_page_lock_t *lock)
 {
-    rbtree_insert(group->head, (void *)&lock->desc, (void *)lock, vres_page_lock_compare);
+    rbtree_insert(&group->tree, &lock->desc, &lock->node);
 }
 
 
@@ -104,7 +111,7 @@ out:
 
 static void vres_page_lock_free(vres_page_lock_group_t *group, vres_page_lock_t *lock)
 {
-    rbtree_delete(group->head, (void *)&lock->desc, vres_page_lock_compare);
+    rbtree_remove(&group->tree, &lock->desc);
     pthread_mutex_destroy(&lock->mutex);
     pthread_cond_destroy(&lock->cond);
     free(lock);
@@ -124,7 +131,6 @@ static int vres_page_lock(vres_t *resource)
         log_resource_err(resource, "no entry");
         return -ENOENT;
     }
-
     if (lock->count > 1)
         pthread_cond_wait(&lock->cond, &lock->mutex);
     pthread_mutex_unlock(&lock->mutex);
@@ -142,7 +148,6 @@ static void vres_page_unlock(vres_t *resource)
 
     if (!(vres_page_lock_stat & VRES_STAT_INIT))
         return;
-
     vres_page_lock_get_desc(resource, &desc);
     grp = &vres_page_lock_group[vres_page_lock_hash(&desc)];
     pthread_mutex_lock(&grp->mutex);
@@ -152,7 +157,6 @@ static void vres_page_unlock(vres_t *resource)
         pthread_mutex_unlock(&grp->mutex);
         return;
     }
-
     pthread_mutex_lock(&lock->mutex);
     if (lock->count > 0) {
         lock->count--;
@@ -199,7 +203,7 @@ int vres_page_update(vres_page_t *page, char *buf)
 {
     int i, j;
     int ret = 0;
-    int dirty = 0;
+    bool dirty = false;
     int diff[VRES_LINE_MAX];
     vres_digest_t digest[VRES_LINE_MAX];
 
@@ -209,14 +213,14 @@ int vres_page_update(vres_page_t *page, char *buf)
     for (i = 0; i < VRES_LINE_MAX; i++) {
         j = i * VRES_LINE_SIZE;
         if (page->digest[i] != digest[i]) {
-            dirty = 1;
+            dirty = true;
             diff[i] = 1;
             memcpy(&page->buf[j], &buf[j], VRES_LINE_SIZE);
         } else {
             if (!memcmp(&page->buf[j], &buf[j], VRES_LINE_SIZE))
                 diff[i] = 0;
             else {
-                dirty = 1;
+                dirty = true;
                 diff[i] = 1;
                 memcpy(&page->buf[j], &buf[j], VRES_LINE_SIZE);
             }
@@ -346,7 +350,6 @@ int vres_page_search_holder_list(vres_t *resource, vres_page_t *page, vres_id_t 
     for (i = 0; i < nr_holders; i++)
         if (page->holders[i] == id)
             return 1;
-
     if (nr_silent_holders > 0) {
         vres_file_entry_t *entry;
         char path[VRES_PATH_MAX];
@@ -368,7 +371,6 @@ int vres_page_search_holder_list(vres_t *resource, vres_page_t *page, vres_id_t 
             return ret;
         }
     }
-
     return 0;
 }
 
@@ -402,13 +404,11 @@ int vres_page_update_holder_list(vres_t *resource, vres_page_t *page, vres_id_t 
                 return -ENOENT;
             }
         }
-
         if (vres_file_size(filp) / sizeof(vres_id_t) != page->nr_silent_holders) {
             log_resource_err(resource, "invalid file length");
             ret = -EINVAL;
             goto out;
         }
-
         vres_file_seek(filp, 0, SEEK_END);
         if (vres_file_write(&holders[nr_holders], sizeof(vres_id_t), nr_silent_holders, filp) != nr_silent_holders) {
             log_resource_err(resource, "failed to update holder list");
@@ -457,12 +457,11 @@ int vres_page_get_hid(vres_page_t *page, vres_id_t id)
     for (i = 0; i < page->nr_holders; i++)
         if (id == page->holders[i])
             return i + 1;
-
     return 0;
 }
 
 
-static int vres_page_wrprotect(vres_t *resource, vres_page_t *page)
+static int vres_page_wrprotect(vres_t *resource, vres_page_t *page, int pid)
 {
     int ret;
     char *buf;
@@ -475,7 +474,7 @@ static int vres_page_wrprotect(vres_t *resource, vres_page_t *page)
         log_resource_err(resource, "no memory");
         return -ENOMEM;
     }
-    ret = sys_shm_wrprotect(resource->key, resource->owner, vres_get_off(resource), buf);
+    ret = sys_shm_wrprotect(resource->key, pid, vres_get_off(resource), buf);
     if (ret) {
         if (ENOENT == errno) {
             ret = 0;
@@ -496,7 +495,7 @@ out:
 }
 
 
-static int vres_page_rdprotect(vres_t *resource, vres_page_t *page)
+static int vres_page_rdprotect(vres_t *resource, vres_page_t *page, int pid)
 {
     int ret = 0;
     char *buf = NULL;
@@ -514,8 +513,7 @@ static int vres_page_rdprotect(vres_t *resource, vres_page_t *page)
             return -ENOMEM;
         }
     }
-
-    ret = sys_shm_rdprotect(resource->key, resource->owner, vres_get_off(resource), buf);
+    ret = sys_shm_rdprotect(resource->key, pid, vres_get_off(resource), buf);
     if (ret) {
         if (ENOENT == errno) {
             ret = 0;
@@ -525,7 +523,6 @@ static int vres_page_rdprotect(vres_t *resource, vres_page_t *page)
             goto out;
         }
     }
-
     if (buf) {
         ret = vres_page_update(page, buf);
         if (ret) {
@@ -545,12 +542,19 @@ out:
 
 int vres_page_protect(vres_t *resource, vres_page_t *page)
 {
+    int ret;
+    vres_desc_t desc;
     int flags = vres_get_flags(resource);
 
+    ret = vres_get_peer(resource->owner, &desc);
+    if (ret) {
+        log_resource_err(resource, "failed to get pid (ret=%s)", log_get_err(ret));
+        return -EINVAL;
+    }
     if (flags & VRES_RDONLY)
-        return vres_page_wrprotect(resource, page);
+        return vres_page_wrprotect(resource, page, desc.id);
     else if (flags & VRES_RDWR)
-        return vres_page_rdprotect(resource, page);
+        return vres_page_rdprotect(resource, page, desc.id);
     else
         return 0;
 }

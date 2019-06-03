@@ -22,10 +22,7 @@
 #endif
 
 #ifdef LOG_TSK_TSKCTL
-#define log_tsk_tskctl(resource, cmd) do {\
-    log_resource(resource);\
-    log_ln(", cmd=%d", cmd);\
-} while (0)
+#define log_tsk_tskctl(resource, cmd) log_resource_info(resource, "cmd=%d", cmd)
 #else
 #define log_tsk_tskctl(...) do {} while(0)
 #endif

@@ -6,6 +6,8 @@
 #include "resource.h"
 
 #ifdef SHOW_REDO
+#define LOG_REDO
+#define LOG_REDO_ALL
 #define LOG_REDO_REQ
 #endif
 

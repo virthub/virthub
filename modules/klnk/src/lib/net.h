@@ -11,7 +11,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <vres.h>
-#include "debug.h"
+#include "log.h"
 
 typedef int klnk_desc_t;
 typedef struct sockaddr_in klnk_addr_t;

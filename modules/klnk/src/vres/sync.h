@@ -4,7 +4,7 @@
 #include "resource.h"
 
 #ifdef SHOW_SYNC
-#define LOG_SYNC
+#define LOG_JOIN
 #endif
 
 #include "log_sync.h"

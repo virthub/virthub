@@ -7,8 +7,8 @@
 
 #include "file.h"
 
-rbtree vres_file_dtree;
-rbtree vres_file_ftree;
+rbtree_t vres_file_dtree;
+rbtree_t vres_file_ftree;
 pthread_rwlock_t vres_file_dlock;
 pthread_rwlock_t vres_file_flock;
 
@@ -17,21 +17,10 @@ int vres_file_mkdir(char *path);
 int vres_file_seek(vres_file_t *filp, long int offset, int origin);
 int vres_file_write(const void *ptr, size_t size, size_t count, vres_file_t *filp);
 
-void vres_file_init()
+int vres_file_compare(const void *val0, const void *val1)
 {
-    if (vres_file_stat != FILE_STAT_INIT) {
-        vres_file_dtree = rbtree_create();
-        vres_file_ftree = rbtree_create();
-        pthread_rwlock_init(&vres_file_dlock, NULL);
-        pthread_rwlock_init(&vres_file_flock, NULL);
-        vres_file_stat = FILE_STAT_INIT;
-        vres_file_mkdir(FILE_ROOT_PATH);
-    }
-}
-
-
-static inline int vres_file_compare(char *left, char *right)
-{
+    char *left = (char *)val0;
+    char *right = (char *)val1;
     size_t l_len = strlen(left);
     size_t r_len = strlen(right);
 
@@ -50,8 +39,20 @@ static inline int vres_file_compare(char *left, char *right)
             else
                 return 1;
         }
-
         return 0;
+    }
+}
+
+
+void vres_file_init()
+{
+    if (vres_file_stat != FILE_STAT_INIT) {
+        rbtree_new(&vres_file_dtree, vres_file_compare);
+        rbtree_new(&vres_file_ftree, vres_file_compare);
+        pthread_rwlock_init(&vres_file_dlock, NULL);
+        pthread_rwlock_init(&vres_file_flock, NULL);
+        vres_file_stat = FILE_STAT_INIT;
+        vres_file_mkdir(FILE_ROOT_PATH);
     }
 }
 
@@ -64,18 +65,14 @@ int vres_file_dirname(char *path, char *dirname)
         log_err("failed");
         return -1;
     }
-
     if (FILE_SEPARATOR == path[lst])
         lst--;
-
     while ((lst >= 0) && (path[lst] != FILE_SEPARATOR))
         lst--;
-
     if (lst < 0) {
         log_err("failed");
         return -1;
     }
-
     memcpy(dirname, path, lst + 1);
     dirname[lst + 1] = '\0';
     return 0;
@@ -89,7 +86,6 @@ static inline vres_file_name_t * vres_file_alloc_name(const char *path)
     name = (vres_file_name_t *)malloc(sizeof(vres_file_name_t));
     if (name)
         strncpy(name->name, path, FILE_PATH_MAX);
-
     return name;
 }
 
@@ -101,7 +97,6 @@ static inline vres_file_t *vres_file_alloc_file(const char *path)
     file = (vres_file_t *)malloc(sizeof(vres_file_t));
     if (!file)
         return NULL;
-
     file->f_pos = 0;
     file->f_size = 0;
     file->f_buf = NULL;
@@ -120,26 +115,25 @@ static inline int vres_file_calloc(vres_file_t *filp, size_t size)
             if (!buf)
                 return -ENOMEM;
         }
-
         if (filp->f_buf)
             free(filp->f_buf);
-
         filp->f_pos = 0;
         filp->f_size = size;
         filp->f_buf = buf;
         return 0;
     }
-
     return -EINVAL;
 }
 
 
 static inline vres_file_t *vres_file_lookup_file(const char *path)
 {
-    vres_file_t *file;
+    vres_file_t *file = NULL;
+    rbtree_node_t *node = NULL;
 
     pthread_rwlock_rdlock(&vres_file_flock);
-    file = rbtree_lookup(vres_file_ftree, (void *)path, vres_file_compare);
+    if (!rbtree_find(&vres_file_ftree, path, &node))
+        file = tree_entry(node, vres_file_t, f_node);
     pthread_rwlock_unlock(&vres_file_flock);
     return file;
 }
@@ -152,9 +146,8 @@ static inline vres_file_t *vres_file_create_file(const char *path)
     file = vres_file_alloc_file(path);
     if (!file)
         return NULL;
-
     pthread_rwlock_wrlock(&vres_file_flock);
-    rbtree_insert(vres_file_ftree, (void *)file->f_path, (void *)file, vres_file_compare);
+    rbtree_insert(&vres_file_ftree, file->f_path, &file->f_node);
     pthread_rwlock_unlock(&vres_file_flock);
     return file;
 }
@@ -162,14 +155,13 @@ static inline vres_file_t *vres_file_create_file(const char *path)
 
 static inline void vres_file_delete_file(const char *path)
 {
-    rbtree_node node;
     vres_file_t *file = NULL;
+    rbtree_node_t *node = NULL;
 
     pthread_rwlock_wrlock(&vres_file_flock);
-    node = rbtree_lookup_node(vres_file_ftree, (void *)path, vres_file_compare);
-    if (node) {
-        file = node->value;
-        rbtree_delete_node(vres_file_ftree, node);
+    if (!rbtree_find(&vres_file_ftree, path, &node)) {
+        file = tree_entry(node, vres_file_t, f_node);
+        rbtree_remove_node(&vres_file_ftree, node);
     }
     pthread_rwlock_unlock(&vres_file_flock);
     if (file)
@@ -185,9 +177,8 @@ static inline vres_file_dir_t *vres_file_alloc_dir(const char *path)
     dir = (vres_file_dir_t *)malloc(sizeof(vres_file_dir_t));
     if (!dir)
         return NULL;
-
     dir->d_count = 0;
-    dir->d_tree = rbtree_create();
+    rbtree_new(&dir->d_tree, vres_file_compare);
     strncpy(dir->d_path, path, FILE_PATH_MAX);
     pthread_rwlock_init(&dir->d_lock, NULL);
     return dir;
@@ -196,9 +187,10 @@ static inline vres_file_dir_t *vres_file_alloc_dir(const char *path)
 
 static inline vres_file_dir_t *vres_file_lookup_dir(const char *path)
 {
-    void *key;
-    vres_file_dir_t *dir;
+    void *key = NULL;
     size_t len = strlen(path);
+    rbtree_node_t *node = NULL;
+    vres_file_dir_t *dir = NULL;
     char dirname[FILE_PATH_MAX] = {0};
 
     if (FILE_SEPARATOR == path[len - 1])
@@ -211,9 +203,9 @@ static inline vres_file_dir_t *vres_file_lookup_dir(const char *path)
         sprintf(dirname, "%s%c", path, FILE_SEPARATOR);
         key = (void *)dirname;
     }
-
     pthread_rwlock_rdlock(&vres_file_dlock);
-    dir = rbtree_lookup(vres_file_dtree, (void *)key, vres_file_compare);
+    if (!rbtree_find(&vres_file_dtree, key, &node))
+        dir = tree_entry(node, vres_file_dir_t, d_node);
     pthread_rwlock_unlock(&vres_file_dlock);
     return dir;
 }
@@ -226,9 +218,8 @@ static inline vres_file_dir_t *vres_file_create_dir(const char *path)
     dir = vres_file_alloc_dir(path);
     if (!dir)
         return NULL;
-
     pthread_rwlock_wrlock(&vres_file_dlock);
-    rbtree_insert(vres_file_dtree, (void *)dir->d_path, (void *)dir, vres_file_compare);
+    rbtree_insert(&vres_file_dtree, dir->d_path, &dir->d_node);
     pthread_rwlock_unlock(&vres_file_dlock);
     return dir;
 }
@@ -237,7 +228,7 @@ static inline vres_file_dir_t *vres_file_create_dir(const char *path)
 static inline void vres_file_delete_dir(const char *path)
 {
     pthread_rwlock_wrlock(&vres_file_dlock);
-    rbtree_delete(vres_file_dtree, (void *)path, vres_file_compare);
+    rbtree_remove(&vres_file_dtree, (void *)path);
     pthread_rwlock_unlock(&vres_file_dlock);
 }
 
@@ -251,7 +242,6 @@ static inline int vres_file_push(char *path)
         log_err("invalid path, path=%s", path);
         return -1;
     }
-
     filename = path + strlen(dirname);
     if ((strlen(filename) > 0) && (strlen(path) < FILE_PATH_MAX)) {
         vres_file_dir_t *dir;
@@ -268,7 +258,7 @@ static inline int vres_file_push(char *path)
             return -1;
         }
         pthread_rwlock_wrlock(&dir->d_lock);
-        rbtree_insert(dir->d_tree, (void *)name->name, (void *)name, vres_file_compare);
+        rbtree_insert(&dir->d_tree, name->name, &name->node);
         dir->d_count++;
         pthread_rwlock_unlock(&dir->d_lock);
         log_file_dir_push(dirname, filename);
@@ -290,7 +280,6 @@ static inline int vres_file_pop(char *path)
         log_err("invalid path, path=%s", path);
         return -1;
     }
-
     filename = path + strlen(dirname);
     len = strlen(filename);
     if ((len > 0) && (len + filename - path < FILE_PATH_MAX)) {
@@ -298,15 +287,14 @@ static inline int vres_file_pop(char *path)
 
         if (!dir)
             return -1;
-
         pthread_rwlock_wrlock(&dir->d_lock);
         if (dir->d_count > 0) {
-            rbtree_node node = rbtree_lookup_node(dir->d_tree, (void *)filename, vres_file_compare);
+            rbtree_node_t *node = NULL;
 
-            if (node) {
-                vres_file_name_t *name = node->value;
+            if (!rbtree_find(&dir->d_tree, filename, &node)) {
+                vres_file_name_t *name = tree_entry(node, vres_file_name_t, node);
 
-                rbtree_delete_node(dir->d_tree, node);
+                rbtree_remove_node(&dir->d_tree, node);
                 dir->d_count--;
                 free(name);
             }
@@ -316,7 +304,6 @@ static inline int vres_file_pop(char *path)
         log_err("invalid path, path=%s", path);
         return -1;
     }
-
     return 0;
 }
 
@@ -334,7 +321,6 @@ int vres_file_truncate(vres_file_t *filp, off_t length)
 {
     if ((length < 0) || !filp)
         return -EINVAL;
-
     if (!length) {
         free(filp->f_buf);
         filp->f_buf = NULL;
@@ -352,11 +338,9 @@ int vres_file_write(const void *ptr, size_t size, size_t count, vres_file_t *fil
 
     if (!filp)
         return -EINVAL;
-
     total = size * count;
     if (!total)
         return 0;
-
     buflen = filp->f_pos + total;
     if (buflen > filp->f_size) {
         filp->f_buf = realloc(filp->f_buf, buflen);
@@ -367,7 +351,6 @@ int vres_file_write(const void *ptr, size_t size, size_t count, vres_file_t *fil
         }
         filp->f_size = buflen;
     }
-
     memcpy(filp->f_buf + filp->f_pos, (char *)ptr, total);
     filp->f_pos += total;
     return count;
@@ -418,10 +401,8 @@ int vres_file_seek(vres_file_t *filp, long int offset, int origin)
     default:
         return -EINVAL;
     }
-
     if ((pos > filp->f_size) || (pos < 0))
         return -EINVAL;
-
     filp->f_pos = pos;
     return 0;
 }
@@ -436,12 +417,10 @@ vres_file_t *vres_file_open(char *path, const char *mode)
         log_err("invalid state");
         return NULL;
     }
-
     if ((len >= FILE_PATH_MAX) || (FILE_SEPARATOR == path[len - 1])) {
         log_err("invalid path");
         return NULL;
     }
-
     file = vres_file_lookup_file(path);
     if (!strcmp(mode, "w")) {
         if (!file) {
@@ -466,7 +445,6 @@ vres_file_t *vres_file_open(char *path, const char *mode)
     }
     if (file)
         file->f_pos = 0;
-
     return file;
 }
 
@@ -512,12 +490,10 @@ int vres_file_mkdir(char *path)
         log_err("invalid state");
         return -1;
     }
-
     if (!len || (len >= FILE_PATH_MAX)) {
         log_err("invalid path");
         return -1;
     }
-
     if (!vres_file_is_root(path)) {
         vres_file_dirname(path, dirname);
         if (!vres_file_is_root(dirname)) {
@@ -529,7 +505,6 @@ int vres_file_mkdir(char *path)
             }
         }
     }
-
     if (FILE_SEPARATOR == path[len - 1])
         name = path;
     else {
@@ -540,54 +515,47 @@ int vres_file_mkdir(char *path)
         sprintf(dirname, "%s%c", path, FILE_SEPARATOR);
         name = dirname;
     }
-
     if (!vres_file_is_root(path)) {
         if (vres_file_push(name)) {
             log_err("failed to push, path=%s", name);
             return -1;
         }
     }
-
     if (!vres_file_create_dir(name)) {
         log_err("failed to create, path=%s", name);
         if (!vres_file_is_root(path))
             vres_file_pop(name);
         return -1;
     }
-
     log_file_mkdir(path);
     return 0;
 }
 
 
-int vres_file_do_handle_file(rbtree_node node, vres_file_callback_t func, char *path, void *arg)
+int vres_file_do_handle_file(rbtree_node_t *node, vres_file_callback_t func, char *path, void *arg)
 {
     int ret;
     char name[FILE_PATH_MAX];
 
     if (!node)
         return 0;
-
     if (node->right) {
         ret = vres_file_do_handle_file(node->right, func, path, arg);
         if (ret)
             return ret;
     }
-
     if (node->left) {
         ret = vres_file_do_handle_file(node->left, func, path, arg);
         if (ret)
             return ret;
     }
-
     strcpy(name, path);
     strcat(name, (char *)node->key);
-
     if (vres_file_is_dir(name)) {
         vres_file_dir_t *dir = vres_file_lookup_dir(name);
 
         if (dir)
-            return vres_file_do_handle_file(dir->d_tree->root, func, dir->d_path, arg);
+            return vres_file_do_handle_file(dir->d_tree.root, func, dir->d_path, arg);
         else {
             log_err("invalid path");
             return -1;
@@ -608,46 +576,40 @@ int vres_file_handle_file(vres_file_callback_t func, char *path, void *arg)
         log_err("invalid state");
         return 0;
     }
-
     dir = vres_file_lookup_dir(path);
     if (dir)
-        return vres_file_do_handle_file(dir->d_tree->root, func, dir->d_path, arg);
+        return vres_file_do_handle_file(dir->d_tree.root, func, dir->d_path, arg);
 
     return 0;
 }
 
 
-int vres_file_do_handle_dir(rbtree_node node, vres_file_callback_t func, char *path, void *arg)
+int vres_file_do_handle_dir(rbtree_node_t *node, vres_file_callback_t func, char *path, void *arg)
 {
     int ret;
     char name[FILE_PATH_MAX];
 
     if (!node)
         return 0;
-
     if (node->right) {
         ret = vres_file_do_handle_dir(node->right, func, path, arg);
         if (ret)
             return ret;
     }
-
     if (node->left) {
         ret = vres_file_do_handle_dir(node->left, func, path, arg);
         if (ret)
             return ret;
     }
-
     strcpy(name, path);
     strcat(name, (char *)node->key);
-
     if (vres_file_is_dir(name)) {
         vres_file_dir_t *dir = vres_file_lookup_dir(name);
 
         if (dir) {
-            ret = vres_file_do_handle_dir(dir->d_tree->root, func, dir->d_path, arg);
+            ret = vres_file_do_handle_dir(dir->d_tree.root, func, dir->d_path, arg);
             if (ret)
                 return ret;
-
             ret = func(name, arg);
             log_file_handle_dir(name);
             return ret;
@@ -656,7 +618,6 @@ int vres_file_do_handle_dir(rbtree_node node, vres_file_callback_t func, char *p
             return -1;
         }
     }
-
     return 0;
 }
 
@@ -669,11 +630,9 @@ int vres_file_handle_dir(vres_file_callback_t func, char *path, void *arg)
         log_err("invalid state");
         return 0;
     }
-
     dir = vres_file_lookup_dir(path);
     if (dir)
-        return vres_file_do_handle_dir(dir->d_tree->root, func, dir->d_path, arg);
-
+        return vres_file_do_handle_dir(dir->d_tree.root, func, dir->d_path, arg);
     return 0;
 }
 
@@ -686,17 +645,16 @@ int vres_file_release_dir(vres_file_dir_t *dir)
     while (dir->d_count > 0) {
         char *name;
         size_t len;
+        rbtree_node_t *node;
         vres_file_name_t *ptr;
-        rbtree_node node;
         char path[FILE_PATH_MAX];
 
-        node = dir->d_tree->root;
+        node = dir->d_tree.root;
         if (!node) {
             log_err("invalid directory");
             ret = -1;
             goto out;
         }
-
         name = (char *)node->key;
         len = strlen(name);
         if (!len || (len >= FILE_PATH_MAX)) {
@@ -704,8 +662,7 @@ int vres_file_release_dir(vres_file_dir_t *dir)
             ret = -1;
             goto out;
         }
-
-        ptr = node->value;
+        ptr = tree_entry(node, vres_file_name_t, node);
         sprintf(path, "%s%s", dir->d_path, name);
         if (FILE_SEPARATOR == name[len - 1]) {
             if (vres_file_rmdir(path)) {
@@ -715,7 +672,7 @@ int vres_file_release_dir(vres_file_dir_t *dir)
             }
         } else {
             vres_file_delete_file(path);
-            rbtree_delete_node(dir->d_tree, node);
+            rbtree_remove_node(&dir->d_tree, node);
             dir->d_count--;
             free(ptr);
         }
@@ -801,7 +758,6 @@ vres_file_entry_t *vres_file_get_entry(char *path, size_t size, int flags)
     entry = (vres_file_entry_t *)malloc(sizeof(vres_file_entry_t));
     if (!entry)
         return NULL;
-
     if (flags & FILE_RDWR) {
         filp = vres_file_open(path, "r+");
         prot = PROT_READ | PROT_WRITE;
@@ -810,18 +766,15 @@ vres_file_entry_t *vres_file_get_entry(char *path, size_t size, int flags)
         prot = PROT_READ;
     } else
         goto out;
-
     if (!filp) {
         if (flags & FILE_CREAT) {
             filp = vres_file_open(path, "w");
             if (vres_file_calloc(filp, size))
                 goto out;
         }
-
         if (!filp)
             goto out;
     }
-
     if (size > filp->f_size) {
         if (prot & PROT_WRITE) {
             filp->f_buf = realloc(filp->f_buf, size);
@@ -835,13 +788,10 @@ vres_file_entry_t *vres_file_get_entry(char *path, size_t size, int flags)
         } else
             goto out;
     }
-
     if (!size)
         size = filp->f_size;
-
     if (!filp->f_buf && (size > 0))
         goto out;
-
     entry->file = filp;
     entry->size = size;
     entry->desc = &filp->f_buf;
@@ -868,8 +818,8 @@ int vres_file_append(vres_file_entry_t *entry, void *buf, size_t size)
     vres_file_seek(filp, 0, SEEK_END);
     if (vres_file_write(buf, 1, size, filp) != size)
         return -EIO;
-
-    return 0;
+    else
+        return 0;
 }
 
 

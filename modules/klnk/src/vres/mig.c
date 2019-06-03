@@ -7,7 +7,7 @@
 
 #include "mig.h"
 
-#define CHECK_INTERVAL    100000 // usec
+#define CHECK_INTERVAL 100000 // usec
 
 int vres_mig_check(vres_t *resource)
 {
@@ -28,7 +28,6 @@ int vres_mig_check(vres_t *resource)
                 log_resource_err(resource, "no entry");
                 return -ENOENT;
             }
-
             if (vres_file_write(&node_addr, sizeof(vres_addr_t), 1, filp) != 1) {
                 log_resource_err(resource, "failed to write");
                 ret = -EIO;
@@ -71,7 +70,6 @@ int vres_mig_set(vres_t *resource, vres_addr_t *addr, vres_arg_t *arg)
         }
         vres_file_close(filp);
     }
-
     if (!ret) {
         vres_t *res;
         pthread_t tid;
@@ -82,10 +80,8 @@ int vres_mig_set(vres_t *resource, vres_addr_t *addr, vres_arg_t *arg)
             log_resource_err(resource, "no memory");
             return -ENOMEM;
         }
-
         arg->index = 0;
         memcpy(res, resource, sizeof(vres_t));
-
         pthread_attr_init(&attr);
         pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
         pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM);
@@ -122,12 +118,10 @@ int vres_mig_nxt(vres_addr_t *nodes, int total, vres_addr_t *addr)
     for (i = 0; i < total; i++)
         if (!memcmp(&nodes[i], &node_addr, sizeof(vres_addr_t)))
             break;
-
     if (i == total) {
         log_err("cannot find node");
         return -EINVAL;
     }
-
     if (i < total)
         i++;
     memcpy(addr, &nodes[i], sizeof(vres_addr_t));
@@ -142,12 +136,10 @@ int vres_mig_bac(vres_addr_t *nodes, int total, vres_addr_t *addr)
     for (i = 0; i < total; i++)
         if (!memcmp(&nodes[i], &node_addr, sizeof(vres_addr_t)))
             break;
-
     if (i == total) {
         log_err("cannot find node");
         return -EINVAL;
     }
-
     if (i > 0)
         i--;
     memcpy(addr, &nodes[i], sizeof(vres_addr_t));
@@ -178,7 +170,6 @@ int vres_mig_loc(vres_t *resource, vres_addr_t *addr)
         log_resource_err(resource, "no entry");
         return -ENOENT;
     }
-
     if (vres_file_read(addr, sizeof(vres_addr_t), 1, filp) != 1) {
         log_resource_err(resource, "failed to read");
         ret = -EIO;
@@ -197,7 +188,6 @@ const char *vres_mig_path(vres_mig_arg_t *arg)
         log_err("invalid path, path=%s", path);
         return NULL;
     }
-
     if (strlen(path) == len)
         return MIG_PATH_ROOT;
     else
@@ -218,19 +208,16 @@ int vres_migrate(vres_t *resource, vres_arg_t *arg)
         log_resource_err(resource, "failed to get path");
         return -EINVAL;
     }
-
     ret = vres_mig_check(resource);
     if (ret) {
         log_mig(resource, path);
         return ret == -EAGAIN ? ret : -EINVAL;
     }
-
     total = node_list(&nodes);
     if (total <= 0) {
         log_resource_err(resource, "failed to get nodes");
         return -EINVAL;
     }
-
     if (!strcmp(path, MIG_PATH_FST))
         ret = vres_mig_fst(nodes, total, &addr);
     else if (!strcmp(path, MIG_PATH_LST))
@@ -243,7 +230,6 @@ int vres_migrate(vres_t *resource, vres_arg_t *arg)
         ret = vres_mig_rnd(nodes, total, &addr);
     else if (!strcmp(path, MIG_PATH_LOC))
         ret = vres_mig_loc(resource, &addr);
-
     if (!ret) {
         if (!memcmp(&addr, &node_addr, sizeof(vres_addr_t)))
             ret = -EAGAIN;
@@ -257,7 +243,6 @@ int vres_migrate(vres_t *resource, vres_arg_t *arg)
         log_resource_err(resource, "invalid path");
         ret = -EINVAL;
     }
-
     free(nodes);
     log_mig(resource, path);
     return ret;

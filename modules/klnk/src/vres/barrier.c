@@ -10,6 +10,16 @@
 int barrier_stat = 0;
 vres_barrier_group_t barrier_group[VRES_BARRIER_GROUP_SIZE];
 
+int vres_barrier_compare(const void *val0, const void *val1)
+{
+    vres_barrier_entry_t *ent0 = ((vres_barrier_desc_t *)val0)->entry;
+    vres_barrier_entry_t *ent1 = ((vres_barrier_desc_t *)val1)->entry;
+    const size_t size = sizeof(vres_barrier_entry_t) * VRES_BARRIER_ENTRY_SIZE;
+
+    return memcmp(ent0, ent1, size);
+}
+
+
 void vres_barrier_init()
 {
     int i;
@@ -19,25 +29,17 @@ void vres_barrier_init()
 
     for (i = 0; i < VRES_BARRIER_GROUP_SIZE; i++) {
         pthread_rwlock_init(&barrier_group[i].lock, NULL);
-        barrier_group[i].head = rbtree_create();
+        rbtree_new(&barrier_group[i].tree, vres_barrier_compare);
     }
     barrier_stat |= VRES_STAT_INIT;
 }
 
 
-static inline int vres_barrier_compare(char *b1, char *b2)
-{
-    vres_barrier_desc_t *desc1 = (vres_barrier_desc_t *)b1;
-    vres_barrier_desc_t *desc2 = (vres_barrier_desc_t *)b2;
-
-    return memcmp(desc1->entry, desc2->entry, sizeof(((vres_barrier_desc_t *)0)->entry));
-}
-
-
 static inline unsigned long vres_barrier_hash(vres_barrier_desc_t *desc)
 {
-    unsigned long *ent = desc->entry;
+    vres_barrier_entry_t *ent = desc->entry;
 
+    assert(VRES_BARRIER_ENTRY_SIZE == 4);
     return (ent[0] ^ ent[1] ^ ent[2] ^ ent[3]) % VRES_BARRIER_GROUP_SIZE;
 }
 
@@ -62,7 +64,6 @@ static inline vres_barrier_t *vres_barrier_alloc(vres_barrier_desc_t *desc)
 
     if (!barrier)
         return NULL;
-
     barrier->flags = 0;
     barrier->count = 0;
     memcpy(&barrier->desc, desc, sizeof(vres_barrier_desc_t));
@@ -74,13 +75,18 @@ static inline vres_barrier_t *vres_barrier_alloc(vres_barrier_desc_t *desc)
 
 static inline vres_barrier_t *vres_barrier_lookup(vres_barrier_group_t *group, vres_barrier_desc_t *desc)
 {
-    return rbtree_lookup(group->head, (void *)desc, vres_barrier_compare);
+    rbtree_node_t *node = NULL;
+
+    if (!rbtree_find(&group->tree, desc, &node))
+        return tree_entry(node, vres_barrier_t, node);
+    else
+        return NULL;
 }
 
 
 static inline void vres_barrier_insert(vres_barrier_group_t *group, vres_barrier_t *barrier)
 {
-    rbtree_insert(group->head, (void *)&barrier->desc, (void *)barrier, vres_barrier_compare);
+    rbtree_insert(&group->tree, &barrier->desc, &barrier->node);
 }
 
 
@@ -107,7 +113,7 @@ static inline vres_barrier_t *vres_barrier_get(vres_t *resource, vres_barrier_gr
 
 static inline void vres_barrier_free(vres_barrier_group_t *group, vres_barrier_t *barrier)
 {
-    rbtree_delete(group->head, (void *)&barrier->desc, vres_barrier_compare);
+    rbtree_remove(&group->tree, &barrier->desc);
     pthread_mutex_destroy(&barrier->mutex);
     pthread_cond_destroy(&barrier->cond);
     free(barrier);
@@ -116,7 +122,7 @@ static inline void vres_barrier_free(vres_barrier_group_t *group, vres_barrier_t
 
 int vres_barrier_wait(vres_t *resource)
 {
-    int release = 0;
+    bool release = false;
     vres_barrier_t *barrier;
     vres_barrier_group_t *grp;
 
@@ -124,30 +130,29 @@ int vres_barrier_wait(vres_t *resource)
         log_err("invalid state");
         return -EINVAL;
     }
-
     barrier = vres_barrier_get(resource, &grp);
     if (!barrier)
         return 0;
-
+    log_barrier_wait(resource, ">-- barrier_wait (begin) --<");
     pthread_cond_wait(&barrier->cond, &barrier->mutex);
     barrier->count--;
     if (!barrier->count && !(barrier->flags & VRES_BARRIER_CLEAR)) {
         pthread_rwlock_wrlock(&grp->lock);
-        release = 1;
+        release = true;
     }
     pthread_mutex_unlock(&barrier->mutex);
     if (release) {
         vres_barrier_free(grp, barrier);
         pthread_rwlock_unlock(&grp->lock);
     }
-    barrier_log(resource);
+    log_barrier_wait(resource, ">-- barrier_wait (end) --<");
     return 0;
 }
 
 
 int vres_barrier_wait_timeout(vres_t *resource, vres_time_t timeout)
 {
-    int release = 0;
+    bool release = false;
     struct timespec time;
     vres_barrier_t *barrier;
     vres_barrier_group_t *grp;
@@ -156,24 +161,23 @@ int vres_barrier_wait_timeout(vres_t *resource, vres_time_t timeout)
         log_err("invalid state");
         return -EINVAL;
     }
-
     barrier = vres_barrier_get(resource, &grp);
     if (!barrier)
         return 0;
-
+    log_barrier_wait_timeout(resource, ">-- barrier_wait_timeout (begin) --<");
     vres_set_timeout(&time, timeout);
     pthread_cond_timedwait(&barrier->cond, &barrier->mutex, &time);
     barrier->count--;
     if (!barrier->count && !(barrier->flags & VRES_BARRIER_CLEAR)) {
         pthread_rwlock_wrlock(&grp->lock);
-        release = 1;
+        release = true;
     }
     pthread_mutex_unlock(&barrier->mutex);
     if (release) {
         vres_barrier_free(grp, barrier);
         pthread_rwlock_unlock(&grp->lock);
     }
-    barrier_log(resource);
+    log_barrier_wait_timeout(resource, ">-- barrier_wait_timeout (end) --<");
     return 0;
 }
 
@@ -188,7 +192,6 @@ int vres_barrier_set(vres_t *resource)
         log_err("invalid state");
         return -EINVAL;
     }
-
     vres_barrier_get_desc(resource, &desc);
     grp = &barrier_group[vres_barrier_hash(&desc)];
     pthread_rwlock_rdlock(&grp->lock);
@@ -202,7 +205,7 @@ int vres_barrier_set(vres_t *resource)
         pthread_cond_broadcast(&barrier->cond);
     pthread_mutex_unlock(&barrier->mutex);
     pthread_rwlock_unlock(&grp->lock);
-    barrier_log(resource);
+    log_barrier_set(resource);
     return 0;
 }
 
@@ -218,7 +221,6 @@ int vres_barrier_clear(vres_t *resource)
         log_err("invalid state");
         return -EINVAL;
     }
-
     vres_barrier_get_desc(resource, &desc);
     grp = &barrier_group[vres_barrier_hash(&desc)];
     pthread_rwlock_wrlock(&grp->lock);
@@ -236,6 +238,6 @@ int vres_barrier_clear(vres_t *resource)
     barrier->flags |= VRES_BARRIER_CLEAR;
     pthread_mutex_unlock(&barrier->mutex);
     pthread_rwlock_unlock(&grp->lock);
-    barrier_log(resource);
+    log_barrier_clear(resource);
     return ret;
 }

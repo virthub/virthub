@@ -5,38 +5,45 @@
 #include <errno.h>
 #include <pthread.h>
 #include "resource.h"
-#include "rbtree.h"
+#include "common.h"
 #include "trace.h"
 
 #define VRES_LOCK_TIMEOUT    1000000 // usec
-#define VRES_LOCK_GROUP_SIZE 1024
+#define VRES_LOCK_GROUP_SIZE 256
+#define VRES_LOCK_ENTRY_SIZE 4
 
 #ifdef SHOW_LOCK
-#define lock_log log_resource_ln
-#else
-#define lock_log(...) do {} while (0)
+#define LOG_LOCK
+#define LOG_UNLOCK
+#define LOG_LOCK_TOP
+#define LOG_LOCK_TIMEOUT
 #endif
 
+#include "log_lock.h"
+
+typedef unsigned long vres_lock_entry_t;
+
 typedef struct vres_lock_desc {
-    unsigned long entry[4];
+    vres_lock_entry_t entry[VRES_LOCK_ENTRY_SIZE];
 } vres_lock_desc_t;
 
 typedef struct vres_lock_group {
     pthread_mutex_t mutex;
-    rbtree head;
+    rbtree_t tree;
 } vres_lock_group_t;
 
 typedef struct vres_lock {
     vres_lock_desc_t desc;
     pthread_mutex_t mutex;
-    pthread_cond_t cond;
     struct list_head list;
+    pthread_cond_t cond;
+    rbtree_node_t node;
     int count;
 } vres_lock_t;
 
 typedef struct vres_lock_list {
-    pthread_t tid;
     struct list_head list;
+    pthread_t tid;
 } vres_lock_list_t;
 
 void vres_lock_init();

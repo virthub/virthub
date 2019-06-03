@@ -19,7 +19,7 @@ void vres_metadata_init()
         return;
 
     metadata_ctx = redisConnect(master_addr, MDS_PORT);
-     if (!metadata_ctx || metadata_ctx->err) {
+    if (!metadata_ctx || metadata_ctx->err) {
         if (metadata_ctx) {
             log_err("failed to connect, %s", metadata_ctx->errstr);
             redisFree(metadata_ctx);
@@ -83,9 +83,9 @@ int vres_metadata_write(char *path, char *buf, int len)
 }
 
 
-int vres_metadata_exists(char *path)
+bool vres_metadata_exists(char *path)
 {
-    int ret = 0;
+    int ret = false;
     redisReply *reply;
 
     if (vres_metadata_check_path(path) < 0) {
@@ -94,7 +94,7 @@ int vres_metadata_exists(char *path)
     }
     reply = redisCommand(metadata_ctx, "EXISTS %s", path);
     if ((REDIS_REPLY_INTEGER == reply->type) && (1 == reply->integer))
-        ret = 1;
+        ret = true;
     freeReplyObject(reply);
     return ret;
 }
@@ -208,7 +208,6 @@ unsigned long vres_metadata_max(char *path)
                     freeReplyObject(reply);
                     return 0;
                 }
-
                 for (i = 0; i < elements; i++) {
                     char *end;
                     unsigned long tmp;

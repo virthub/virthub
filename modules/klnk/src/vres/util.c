@@ -22,6 +22,7 @@ void vres_sleep(vres_time_t timeout)
 
     if (timeout <= 0)
         return;
+
     pthread_mutex_init(&mutex, NULL);
     pthread_cond_init(&cond, NULL);
     vres_set_timeout(&time, timeout);
@@ -166,7 +167,9 @@ bool vres_need_lock(vres_t *resource)
 
 bool vres_need_wrlock(vres_t *resource)
 {
-    return VRES_OP_SHMCTL == vres_get_op(resource);
+    vres_op_t op = vres_get_op(resource);
+
+    return (VRES_OP_SHMCTL == op) || (VRES_OP_JOIN == op) || (VRES_OP_LEAVE == op);
 }
 
 

@@ -6,13 +6,11 @@
 #ifdef LOG_PROC
 #define log_proc(req) do { \
     vres_t *resource = &req->resource; \
-    log_resource(resource); \
-    log(", op=%s", log_get_op(vres_get_op(resource))); \
     if (vres_get_op(resource) == VRES_OP_SHMFAULT) { \
         vres_shmfault_arg_t *arg = (vres_shmfault_arg_t *)req->buf; \
-        log(", cmd=%s", log_get_shmop(arg->cmd)); \
-    } \
-    log("\n"); \
+        log_resource_info(resource, "op=%s, cmd=%s", log_get_op(vres_get_op(resource)), log_get_shm_cmd(arg->cmd)); \
+    } else \
+        log_resource_info(resource, "op=%s", log_get_op(vres_get_op(resource))); \
 } while(0)
 #else
 #define log_proc(...) do {} while (0)

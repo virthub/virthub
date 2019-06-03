@@ -91,7 +91,7 @@ def _chkargs():
             _args[key] = str(val)
 
 def _chkkern():
-    path = os.path.join(KERN_SRC, 'linux-%s' % _args['kernel_version'])
+    path = os.path.join(KERN_SRC, 'linux-%s' % _args['kernel'])
     if not os.path.exists(path):
         raise Exception('Error: failed to find %s' % path)
     link = os.path.join(KERN_SRC, 'linux')
@@ -101,7 +101,7 @@ def _chkkern():
         res = getoutput('readlink -f %s' % link)
         if res != path:
             raise Exception('Error: the default path of linux kernel is invalid (the path %s is linked to %s)' % (res, link))
-    modules = '/lib/modules/%s/build' % _args['kernel_version']
+    modules = '/lib/modules/%s/build' % _args['kernel']
 
 def _call(cmd, path=None, quiet=False, ignore=False):
     if path:
@@ -120,13 +120,13 @@ def _install_packages():
     for i in PIP:
         cmd = 'pip install %s --upgrade' % i
         _call(cmd)
-    path = os.path.join(_args['lxc_cache'], _args['release'])
+
+def _install_bootstrap():
+    path = PATH_LXC_ROOT
     if os.path.isdir(path):
         shutil.rmtree(path)
     os.makedirs(path, 0o755)
-
-def _install_bootstrap():
-    cmd = 'debootstrap --arch %s %s %s %s' % (_args['arch'], _args['release'], path, _args['mirror'])
+    cmd = 'debootstrap --arch %s %s %s %s' % (_args['arch'], _args['release'], path, MIRROR)
     _call(cmd)
 
 def _install():
@@ -159,7 +159,7 @@ def _build(args=None, quiet=False):
                         _call('./build.sh %s' % args, path)
 
 def _setup():
-    paths = [PATH_BIN, PATH_RUN, PATH_VAR, PATH_INIT, PATH_MNT]
+    paths = [PATH_BIN, PATH_RUN, PATH_VAR, PATH_INIT, PATH_MNT, PATH_CONF]
     for path in paths:
         os.system("mkdir -p %s" % path)
         if path == PATH_INIT:

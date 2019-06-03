@@ -3,10 +3,10 @@
 
 #include "log.h"
 
-#ifdef LOG_SYNC
-#define log_sync log_resource_ln
+#ifdef LOG_JOIN
+#define log_join log_resource_info
 #else
-#define log_sync(...) do {} while (0)
+#define log_join(...) do {} while (0)
 #endif
 
 #endif

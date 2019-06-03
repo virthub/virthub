@@ -39,6 +39,7 @@
 #define vres_path_append_queue(path, queue) sprintf(path + strlen(path), "%lx.", (unsigned long)queue)  //4th level
 #define vres_path_append_index(path, index) sprintf(path + strlen(path), "%ld", (unsigned long)index)
 
+void vres_clear_path(vres_t *resource);
 void vres_get_path(vres_t *resource, char *path);
 void vres_get_mig_path(vres_t *resource, char *path);
 void vres_get_cls_path(vres_t *resource, char *path);
@@ -56,6 +57,7 @@ void vres_get_record_path(vres_t *resource, char *path);
 void vres_get_update_path(vres_t *resource, char *path);
 void vres_get_priority_path(vres_t *resource, char *path);
 
+int vres_mkdir(vres_t *resource);
 int vres_is_key_path(char *path);
 int vres_get_resource(const char *path, vres_t *resource);
 int vres_path_join(const char *p1, const char *p2, char *path);

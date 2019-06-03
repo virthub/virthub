@@ -11,12 +11,12 @@
 #endif
 
 #ifdef LOG_NODE_LIST
-#define log_node_list(list, total) do {\
-    int i;\
-    log("nodes=[");\
-    for (i = 0; i < total - 1; i++)\
-        log("%s, ", inet_ntoa(list[i]));\
-    log_ln("%s]", inet_ntoa(list[i]));\
+#define log_node_list(list, total) do { \
+    int i; \
+    log("nodes=["); \
+    for (i = 0; i < total - 1; i++) \
+        log("%s, ", inet_ntoa(list[i])); \
+    log_ln("%s]", inet_ntoa(list[i])); \
 } while (0)
 #else
 #define log_node_list(...) do {} while (0)

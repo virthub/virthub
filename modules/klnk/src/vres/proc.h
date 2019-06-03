@@ -20,7 +20,7 @@
 
 #include "log_proc.h"
 
-#ifdef SHOW_PROC
+#ifdef TRACE_PROC
 #define trace_proc(req) vres_trace(req)
 #else
 #define trace_proc(...) do {} while (0)
