@@ -1,15 +1,7 @@
 #ifndef _KLNK_H
 #define _KLNK_H
 
-#define FUSE_USE_VERSION 26
-
-#ifdef UNSHARE
-#ifndef _GNU_SOURCE
-#define _GNU_SOURCE
-#endif
-#include <sched.h>
-#endif
-
+#include <defaults.h>
 #include <fuse.h>
 #include <vres.h>
 #include <unistd.h>
@@ -19,18 +11,12 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include "handler.h"
-#include "barrier.h"
-#include "mutex.h"
 #include "trace.h"
+#include "mutex.h"
 #include "rpc.h"
 #include "io.h"
-
-#define LOG_KLNK_OPEN
-
-#ifdef LOG_KLNK_OPEN
-#define log_klnk_open log_resource_info
-#else
-#define log_klnk_open(...) do  {} while (0)
+#ifdef ENABLE_BARRIER
+#include "barrier.h"
 #endif
 
 #endif

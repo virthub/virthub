@@ -3,9 +3,9 @@
 
 #include <list.h>
 #include <errno.h>
+#include <common.h>
 #include <pthread.h>
 #include "resource.h"
-#include "common.h"
 #include "trace.h"
 
 #define VRES_BARRIER_TIMEOUT    5000000 // usec

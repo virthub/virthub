@@ -5,9 +5,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <common.h>
 #include <pthread.h>
 #include "resource.h"
-#include "common.h"
 
 #define VRES_EVENT_BUSY       0x0001
 #define VRES_EVENT_CANCEL     0x0002

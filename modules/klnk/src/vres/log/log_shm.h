@@ -47,6 +47,21 @@
 #define log_shm_check_owner(...) do {} while (0)
 #endif
 
+#ifdef LOG_SHM_CHECK_ACTIVE_OWNER
+#define log_shm_check_active_owner(page, req) do { \
+    char tmp[LOG_STR_LEN] = {0}; \
+    vres_t *resource = &(req)->resource; \
+    vres_shmfault_arg_t *arg = (vres_shmfault_arg_t *)(req->buf); \
+    log_resource_str(resource, tmp); \
+    log_shm_holders(page, tmp); \
+    log_shm_page(page, tmp); \
+    log_shm_arg(arg, tmp); \
+    log_ln("%s", tmp); \
+} while (0)
+#else
+#define log_shm_check_owner(...) do {} while (0)
+#endif
+
 #ifdef LOG_SHM_FAST_REPLY
 #define log_shm_fast_reply(resource, hid, nr_peers) log_resource_info(resource, "hid=%d, nr_peers=%d", hid, nr_peers)
 #else
@@ -65,6 +80,20 @@
 } while (0)
 #else
 #define log_shm_check_holder(...) do {} while (0)
+#endif
+
+#ifdef LOG_SHM_CHECK_ACTIVE_HOLDER
+#define log_shm_check_active_holder(page, req, nr_lines, total) do { \
+    char tmp[LOG_STR_LEN] = {0}; \
+    vres_t *resource = &(req)->resource; \
+    vres_shmfault_arg_t *arg = (vres_shmfault_arg_t *)(req->buf); \
+    log_resource_str(resource, tmp); \
+    log_shm_page(page, tmp); \
+    log_shm_arg(arg, tmp); \
+    log_ln("%s, nr_lines=%d (total=%d)", tmp, nr_lines, total); \
+} while (0)
+#else
+#define log_shm_check_active_holder(...) do {} while (0)
 #endif
 
 #ifdef LOG_SHM_CHECK_FAST_REPLY
@@ -96,10 +125,10 @@
 #define log_shm_notify_owner(...) do {} while (0)
 #endif
 
-#ifdef LOG_SHM_PASSTHROUGH
-#define log_shm_passthrough log_resource_ln
+#ifdef LOG_SHM_BYPASS
+#define log_shm_bypass log_resource_ln
 #else
-#define log_shm_passthrough(...) do {} while (0)
+#define log_shm_bypass(...) do {} while (0)
 #endif
 
 #ifdef LOG_SHM_NOTIFY_HOLDER
@@ -162,7 +191,7 @@
 #endif
 
 #ifdef LOG_SHM_SAVE_UPDATES
-#define log_shm_save_updates(resource, nr_lines) log_resource_info(resource, "updates=%d", nr_lines)
+#define log_shm_save_updates(resource, nr_lines, total) log_resource_info(resource, "nr_lines=%d (total=%d)", nr_lines, total)
 #else
 #define log_shm_save_updates(...) do {} while (0)
 #endif
@@ -195,12 +224,6 @@
 } while (0)
 #else
 #define log_shm_save_req(...) do {} while (0)
-#endif
-
-#ifdef LOG_SHM_SELECT
-#define log_shm_select(resource) log_resource_info(resource, "op=%s", vres_op2str(vres_get_op(resource)))
-#else
-#define log_shm_select(...) do {} while (0)
 #endif
 
 #ifdef LOG_SHM_WAKEUP
@@ -252,9 +275,9 @@
 #ifdef LOG_SHM_REQUEST_OWNER
 #define log_shm_request_owner(resource, cmd, dest) do { \
     if (dest) \
-        log_resource_info(resource, "dest=%d, op=%s, cmd=%s=>%s", *dest, log_get_shm_cmd(VRES_SHM_NOTIFY_OWNER), log_get_op(vres_get_op(resource)), log_get_shm_cmd(cmd)); \
+        log_resource_info(resource, "dest=%d", *dest); \
     else \
-        log_resource_info(resource, "dest=NULL, op=%s, cmd=%s=>%s", log_get_shm_cmd(VRES_SHM_NOTIFY_OWNER), log_get_op(vres_get_op(resource)), log_get_shm_cmd(cmd)); \
+        log_resource_info(resource, "dest=NULL"); \
 } while (0)
 #else
 #define log_shm_request_owner(...) do {} while (0)
@@ -283,4 +306,17 @@
 #else
 #define log_shm_get_peer_info(...) do {} while (0)
 #endif
+
+#ifdef LOG_SHM_REQUEST_SILENT_HOLERS
+#define log_shm_request_silent_holders log_resource_ln
+#else
+#define log_shm_request_silent_holders(...) do {} while (0)
+#endif
+
+#ifdef LOG_SHM_REQUEST_HOLDERS
+#define log_shm_request_holders log_resource_ln
+#else
+#define log_shm_request_holders(...) do {} while (0)
+#endif
+
 #endif

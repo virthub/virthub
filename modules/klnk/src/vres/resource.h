@@ -10,6 +10,7 @@
 #include <sys/ioctl.h>
 #include <netinet/in.h>
 #include "log.h"
+#include "redo.h"
 #include "file.h"
 #include "node.h"
 #include "lock.h"

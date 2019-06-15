@@ -64,8 +64,6 @@ int vres_record_save(char *path, vres_req_t *req, vres_index_t *index)
         return -ENOENT;
     curr = vres_file_get_desc(checkin, int);
     *index = *curr;
-
-    // record saving
     size = sizeof(vres_rec_hdr_t) + sizeof(vres_req_t) + req->length;
     strcpy(name, path);
     vres_path_append_index(name, *index);
@@ -83,7 +81,6 @@ int vres_record_save(char *path, vres_req_t *req, vres_index_t *index)
         if (req->length > 0)
             memcpy(&preq[1], req->buf, req->length);
     }
-    // update index
     if (*curr + 1 >= VRES_INDEX_MAX)
         *curr = 0;
     else
@@ -113,7 +110,7 @@ int vres_record_update(char *path, vres_index_t index, vres_rec_hdr_t *hdr)
 }
 
 
-int vres_record_first(char *path, vres_index_t *index)
+int vres_record_head(char *path, vres_index_t *index)
 {
     int ret;
     int *curr;
@@ -159,7 +156,6 @@ int vres_record_next(char *path, vres_index_t *index)
             return 0;
         }
     } while (next != *index);
-
     return -ENOENT;
 }
 
@@ -187,6 +183,7 @@ int vres_record_remove(char *path, vres_index_t index)
         strcpy(name, path);
         vres_path_append_index(name, next);
         vres_file_remove(name);
+        log_record_remove(name, -1, -1);
         do {
             if (++next >= VRES_INDEX_MAX)
                 next = 0;
@@ -200,27 +197,13 @@ int vres_record_remove(char *path, vres_index_t index)
                 strcpy(name, path);
                 vres_path_append_index(name, next);
                 vres_file_remove(name);
+                log_record_remove(name, -1, -1);
             } else
                 break;
         } while (next != index);
         *curr = next;
     }
     vres_file_put_entry(entry);
+    log_record_remove(path, index, *curr);
     return ret;
-}
-
-
-int vres_record_empty_check(char *path)
-{
-    int ret;
-    vres_index_t index;
-
-    ret = vres_record_first(path, &index);
-    if (ret) {
-        if (-ENOENT == ret)
-            return 1;
-        else
-            return -EINVAL;
-    } else
-        return 0;
 }

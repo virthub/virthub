@@ -3,10 +3,10 @@
 
 #include <vres.h>
 #include <fcntl.h>
+#include <common.h>
 #include <pthread.h>
 #include <sys/mman.h>
 #include "member.h"
-#include "common.h"
 #include "line.h"
 #include "file.h"
 
@@ -26,15 +26,15 @@
 #define VRES_PAGE_SAVE            0x00400000
 
 #define VRES_PAGE_DIFF_SIZE       ((VRES_PAGE_NR_VERSIONS * VRES_LINE_MAX + BITS_PER_BYTE - 1) / BITS_PER_BYTE)
-#define VRES_PAGE_LOCK_GROUP_SIZE 1024
+#define VRES_PAGE_LOCK_GROUP_SIZE 256
 #define VRES_PAGE_LOCK_ENTRY_SIZE 2
 
 #define VRES_PAGE_NR_VERSIONS     16
 #define VRES_PAGE_NR_CANDIDATES   16
-#define VRES_PAGE_NR_HOLDERS      16
+#define VRES_PAGE_NR_HOLDERS      8
 #define VRES_PAGE_NR_HITS         4
 
-#define VRES_PAGE_CHECK_INTERVAL  1000     // usec
+#define VRES_PAGE_CHECK_INTERVAL  1000 // usec
 
 #ifdef SHOW_PAGE
 #define LOG_PAGE_LOCK
@@ -73,7 +73,7 @@ typedef struct vres_page {
     vres_digest_t digest[VRES_LINE_MAX];
     vres_index_t index;
     vres_clk_t clk;
-    int hid; // the id of holder
+    int hid; // Holder ID
     int flags;
     int count;
     int nr_holders;

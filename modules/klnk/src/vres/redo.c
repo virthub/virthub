@@ -41,7 +41,7 @@ int vres_redo(vres_t *resource, int flags)
 
     vres_get_record_path(resource, path);
     log_redo(resource, "*start*");
-    ret = vres_record_first(path, &index);
+    ret = vres_record_head(path, &index);
     while (!ret) {
         ret = vres_record_get(path, index, &record);
         if (ret) {
@@ -79,7 +79,7 @@ int vres_redo_all(vres_t *resource, int flags)
     nr_queues = vres_get_nr_queues(resource->cls);
     for (i = 0; i < nr_queues; i++) {
         vres_path_append_queue(path, i);
-        ret = vres_record_first(path, &index);
+        ret = vres_record_head(path, &index);
 
         while (!ret) {
             ret = vres_record_get(path, index, &record);

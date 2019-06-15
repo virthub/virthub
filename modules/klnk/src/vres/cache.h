@@ -1,12 +1,12 @@
 #ifndef _CACHE_H
 #define _CACHE_H
 
-#include <stdlib.h>
-#include <pthread.h>
-#include <errno.h>
 #include <list.h>
+#include <errno.h>
+#include <stdlib.h>
+#include <common.h>
+#include <pthread.h>
 #include "resource.h"
-#include "common.h"
 
 #define VRES_CACHE_GROUP_SIZE 256
 #define VRES_CACHE_QUEUE_SIZE 256

@@ -157,6 +157,12 @@ bool vres_need_half_lock(vres_t *resource)
 }
 
 
+bool vres_need_reply(vres_t *resource)
+{
+    return !vres_need_half_lock(resource);
+}
+
+
 bool vres_need_lock(vres_t *resource)
 {
     vres_op_t op = vres_get_op(resource);
@@ -249,12 +255,10 @@ vres_reply_t *vres_reply_err(int err)
 
 vres_reply_t *vres_reply_alloc(size_t size)
 {
-    vres_reply_t *reply = (vres_reply_t *)malloc(sizeof(vres_reply_t) + size);
+    vres_reply_t *reply = (vres_reply_t *)calloc(1, sizeof(vres_reply_t) + size);
 
-    if (reply) {
-        memset(reply->buf, 0, size);
+    if (reply)
         reply->length = size;
-    }
     return reply;
 }
 

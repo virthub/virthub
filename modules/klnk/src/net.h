@@ -17,11 +17,10 @@ typedef int klnk_desc_t;
 typedef struct sockaddr_in klnk_addr_t;
 
 void klnk_close(klnk_desc_t desc);
-int klnk_send(klnk_desc_t desc, char *buf, size_t size);
-int klnk_recv(klnk_desc_t desc, char *buf, size_t size);
-
 klnk_desc_t klnk_accept(klnk_desc_t desc);
 klnk_desc_t klnk_listen(vres_addr_t address, int port);
 klnk_desc_t klnk_connect(vres_addr_t address, int port);
+int klnk_send(klnk_desc_t desc, char *buf, size_t size);
+int klnk_recv(klnk_desc_t desc, char *buf, size_t size);
 
 #endif

@@ -144,7 +144,6 @@ int vres_lookup(vres_t *resource, vres_desc_t *desc)
         log_resource_lookup(resource, "find from cache, addr=%s", vres_addr2str(desc->address));
     else if (ret)
         log_resource_err(resource, "failed to read cache");
-
     return ret;
 }
 

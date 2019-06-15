@@ -14,18 +14,9 @@ int vres_cache_compare(const void *val0, const void *val1)
 {
     vres_cache_entry_t *ent0 = ((vres_cache_desc_t *)val0)->entry;
     vres_cache_entry_t *ent1 = ((vres_cache_desc_t *)val1)->entry;
+    const size_t size = sizeof(vres_cache_entry_t) * VRES_CACHE_ENTRY_SIZE;
 
-    if (ent0[0] > ent1[0])
-        return 1;
-    else if (ent0[0] == ent1[0]) {
-        if (ent0[1] > ent1[1])
-            return 1;
-        else if (ent0[1] == ent1[1])
-            return 0;
-        else
-            return -1;
-    } else
-        return -1;
+    return memcmp(ent0, ent1, size);
 }
 
 
@@ -35,7 +26,6 @@ void vres_cache_init()
 
     if (cache_stat & VRES_STAT_INIT)
         return;
-
     for (i = 0; i < VRES_CACHE_GROUP_SIZE; i++) {
         rbtree_new(&cache_group[i].tree, vres_cache_compare);
         pthread_mutex_init(&cache_group[i].mutex, NULL);
@@ -68,7 +58,6 @@ static inline vres_cache_t *vres_cache_alloc(vres_cache_desc_t *desc, size_t len
 
     if (!len)
         return NULL;
-
     cache = (vres_cache_t *)malloc(sizeof(vres_cache_t));
     if (!cache)
         return NULL;
@@ -171,7 +160,6 @@ int vres_cache_read(vres_t *resource, char *buf, size_t len)
 
     if (!(cache_stat & VRES_STAT_INIT))
         return -EINVAL;
-
     vres_cache_get_desc(resource, &desc);
     grp = &cache_group[vres_cache_hash(&desc)];
     pthread_mutex_lock(&grp->mutex);
@@ -202,7 +190,6 @@ void vres_cache_flush(vres_t *resource)
 
     if (!(cache_stat & VRES_STAT_INIT))
         return;
-
     vres_cache_get_desc(resource, &desc);
     grp = &cache_group[vres_cache_hash(&desc)];
     pthread_mutex_lock(&grp->mutex);

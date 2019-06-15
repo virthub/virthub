@@ -67,7 +67,8 @@ int vres_rpc_get(vres_t *resource, unsigned long addr, size_t inlen, size_t outl
     log_rpc_get(resource);
     ret = vres_rpc_check(resource, addr, inlen, outlen, arg);
     if (ret) {
-        log_resource_err(resource, "failed, ret=%s", log_get_err(ret));
+        if (ret != -EOK)
+            log_resource_err(resource, "failed, ret=%s", log_get_err(ret));
         return ret;
     }
     if (vres_is_local(op))
@@ -87,7 +88,8 @@ int vres_rpc_get(vres_t *resource, unsigned long addr, size_t inlen, size_t outl
         break;
     }
     if (ret) {
-        log_resource_err(resource, "failed to get arg, ret=%s", log_get_err(ret));
+        if (ret != -EOK)
+            log_resource_err(resource, "failed to get arg, ret=%s", log_get_err(ret));
         vres_rpc_release(arg);
     }
     return ret;

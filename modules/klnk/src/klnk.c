@@ -211,8 +211,8 @@ static inline int klnk_init(char *addr)
         log_err("failed to create");
         return ret;
     }
-    klnk_mutex_init();
     vres_init();
+    klnk_mutex_init();
     ret = klnk_load_conf();
     if (ret) {
         log_err("failed to load conf");
@@ -240,11 +240,11 @@ int klnk_getattr(const char *path, struct stat *stbuf)
 inline bool klnk_check_bypass(vres_t *resource)
 {
     switch (vres_get_op(resource)) {
-#ifdef DISABLE_PGSAVE
+#ifndef ENABLE_PGSAVE
     case VRES_OP_PGSAVE:
         return true;
 #endif
-#ifdef DISABLE_TSKPUT
+#ifndef ENABLE_TSKPUT
     case VRES_OP_TSKPUT:
         return true;
 #endif
@@ -267,8 +267,8 @@ int klnk_open(const char *path, struct fuse_file_info *fi)
 
     ret = vres_parse(path, pres, &addr, &inlen, &outlen);
     if (ret) {
-        log_err("failed to get resource");
-        goto err;
+        log_err("failed to get resource, ret=%s", log_get_err(ret));
+        return ret;
     }
     if (klnk_check_bypass(pres)) {
         log_klnk_open(pres, "bypass (op=%s)", log_get_op(vres_get_op(pres)));
@@ -276,25 +276,28 @@ int klnk_open(const char *path, struct fuse_file_info *fi)
         return -EOK;
     }
     log_klnk_open(pres, ">-- open (begin) --<");
+#ifdef ENABLE_BARRIER
     vres_barrier_wait_timeout(pres, VRES_BARRIER_TIMEOUT);
+#endif
     klnk_mutex_lock(pres);
     ret = vres_rpc_get(pres, addr, inlen, outlen, parg);
-    if (-EAGAIN == ret) {
-        log_resource_warning(pres, "waiting");
-        goto wait;
-    } else if (ret)
-        goto out;
-    ret = vres_rpc(parg);
     if (ret) {
-        log_resource_err(pres, "failed to invoke rpc, ret=%s", log_get_err(ret));
-        goto out;
+        if (-EAGAIN == ret)
+            goto wait;
+        else
+            goto out;
+    } else {
+        ret = vres_rpc(parg);
+        if (ret) {
+            log_resource_err(pres, "rpc failed, ret=%s", log_get_err(ret));
+            goto out;
+        }
     }
 wait:
     ret = vres_rpc_wait(parg);
     vres_rpc_put(parg);
 out:
     klnk_mutex_unlock(pres);
-err:
     if (!vres_can_expose(pres))
         ret = ret ? ret : -EOK;
     log_klnk_open(pres, ">-- open (end, ret=%s) --<", log_get_err(ret));

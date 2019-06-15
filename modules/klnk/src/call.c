@@ -23,7 +23,7 @@ int klnk_call(vres_arg_t *arg)
 }
 
 
-int klnk_call_broadcast(vres_arg_t *arg)
+int klnk_broadcast(vres_arg_t *arg)
 {
     int ret = 0;
 
@@ -32,11 +32,11 @@ int klnk_call_broadcast(vres_arg_t *arg)
     else {
         int i;
         int count = 0;
-        pthread_t *threads = (pthread_t *)malloc(arg->peers->total * sizeof(pthread_t));
+        pthread_t threads[KLNK_CALL_MAX];
 
-        if (!threads) {
-            log_resource_err(&arg->resource, "no memory");
-            return -ENOMEM;
+        if (arg->peers->total > KLNK_CALL_MAX) {
+            log_resource_err(&arg->resource, "too much requests (total=%d)", arg->peers->total);
+            return -EINVAL;
         }
         for (i = 0; i < arg->peers->total; i++) {
             ret = klnk_io_async(&arg->resource, arg->in, arg->inlen, arg->out, arg->outlen, &arg->peers->list[i], &threads[i]);
@@ -48,7 +48,7 @@ int klnk_call_broadcast(vres_arg_t *arg)
         }
         for (i = 0; i < count; i++)
             pthread_join(threads[i], NULL);
-        free(threads);
     }
+    log_klnk_broadcast(&arg->resource);
     return ret;
 }

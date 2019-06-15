@@ -53,7 +53,7 @@ int klnk_io_sync(vres_t *resource, char *in, size_t inlen, char *out, size_t out
 
     EVAL_START(klnk_io_sync);
     if ((inlen > KLNK_IO_MAX) || (outlen > KLNK_IO_MAX)) {
-        log_err("invalid parameters");
+        log_resource_err(resource, "invalid parameters");
         return -EINVAL;
     }
     log_klnk_io_sync(resource, ">-- io_sync (begin) --<");
@@ -61,20 +61,20 @@ again:
     if (!dest) {
         ret = vres_lookup(resource, &peer);
         if (ret) {
-            log_err("failed to lookup (ret=%s)", log_get_err(ret));
+            log_resource_err(resource, "failed to lookup (ret=%s)", log_get_err(ret));
             goto release;
         }
     } else {
         ret = vres_get_peer(*dest, &peer);
         if (ret) {
-            log_err("failed to get peer %d (ret=%s)", *dest, log_get_err(ret));
+            log_resource_err(resource, "failed to get peer %d (ret=%s)", *dest, log_get_err(ret));
             goto release;
         }
     }
     if (!buf) {
         buf = malloc(buflen);
         if (!buf) {
-            log_err("no memory");
+            log_resource_err(resource, "no memory");
             ret = -ENOMEM;
             goto release;
         }
@@ -83,7 +83,7 @@ again:
         req->length = inlen;
         ret = vres_get_peer(vres_get_id(resource), &req->src);
         if (ret) {
-            log_err("failed to get peer %d (ret=%s)", vres_get_id(resource), log_get_err(ret));
+            log_resource_err(resource, "failed to get peer %d (ret=%s)", vres_get_id(resource), log_get_err(ret));
             goto release;
         }
         if (inlen > 0)
@@ -96,14 +96,14 @@ again:
     log_klnk_io_sync_connect(resource, peer);
     desc = klnk_connect(peer.address, KLNK_PORT);
     if (desc < 0) {
-        log_err("failed to connect to %s (ret=%s)", vres_addr2str(peer.address), log_get_err(desc));
+        log_resource_err(resource, "failed to connect to %s (ret=%s)", vres_addr2str(peer.address), log_get_err(desc));
         ret = -EFAULT;
         goto retry;
     }
     log_klnk_io_sync_send(resource);
     ret = klnk_send(desc, buf, buflen);
     if (ret) {
-        log_err("failed to send to %s (ret=%s)", vres_addr2str(peer.address), log_get_err(ret));
+        log_resource_err(resource, "failed to send to %s (ret=%s)", vres_addr2str(peer.address), log_get_err(ret));
         goto retry;
     }
     log_klnk_io_sync_output(resource);

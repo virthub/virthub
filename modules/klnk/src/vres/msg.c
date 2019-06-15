@@ -114,7 +114,7 @@ vres_reply_t *vres_msg_msgsnd(vres_req_t *req, int flags)
     }
     vres_set_op(&res, VRES_OP_MSGRCV);
     vres_get_record_path(&res, path);
-    ret = vres_record_first(path, &start);
+    ret = vres_record_head(path, &start);
     if (!ret) {
         // check the waiting list
         for (;;) {
@@ -234,7 +234,7 @@ vres_reply_t *vres_msg_msgrcv(vres_req_t *req, int flags)
     mode = vres_msg_convert_mode(&msgtyp, msgflg);
     vres_set_op(&dest, VRES_OP_MSGSND);
     vres_get_record_path(&dest, path);
-    ret = vres_record_first(path, &start);
+    ret = vres_record_head(path, &start);
     if (!ret) {
         // check the waiting senders
         for (;;) {

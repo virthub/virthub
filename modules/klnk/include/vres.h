@@ -14,8 +14,16 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 
-#define DISABLE_PGSAVE
-#define DISABLE_TSKPUT
+#define ENABLE_TTL
+#define ENABLE_PRIORITY
+#define ENABLE_LIVE_TIME
+#define ENABLE_TIME_SYNC
+#define ENABLE_FAST_REPLY
+#define ENABLE_DYNAMIC_OWNER
+
+// #define ENABLE_PGSAVE
+// #define ENABLE_TSKPUT
+// #define ENABLE_BARRIER
 
 #define NO_MANAGER       0
 #define STATIC_MANAGER   1
@@ -40,15 +48,16 @@
 #define VRES_RDONLY      0x0001
 #define VRES_RDWR        0x0002
 #define VRES_CREAT       0x0004
-#define VRES_CHOWN       0x0010
-#define VRES_CAND        0x0020
-#define VRES_REDO        0x0040
-#define VRES_CANCEL      0x0080
-#define VRES_PRIO        0x0100
-#define VRES_DIFF        0x0200
-#define VRES_CRIT        0x0400
+#define VRES_CHOWN       0x0008
+#define VRES_CAND        0x0010
+#define VRES_CANCEL      0x0020
+#define VRES_DIFF        0x0040
+#define VRES_CRIT        0x0080
+#define VRES_REDO        0x0100
+#define VRES_PRIO        0x0200
 
 #define VRES_STAT_INIT   1
+#define VRES_TTL_MAX     128
 
 enum vres_class {
     VRES_CLS_MSG,
@@ -94,18 +103,18 @@ enum vres_operation {
     VRES_NR_OPERATIONS,
 };
 
-#define VRES_LOCAL_START        VRES_OP_UNUSED1
-#define VRES_LOCAL_END          VRES_OP_UNUSED2
-#define VRES_SYNC_START         VRES_OP_UNUSED2
-#define VRES_SYNC_END           VRES_OP_UNUSED3
+#define VRES_LOCAL_START VRES_OP_UNUSED1
+#define VRES_LOCAL_END   VRES_OP_UNUSED2
+#define VRES_SYNC_START  VRES_OP_UNUSED2
+#define VRES_SYNC_END    VRES_OP_UNUSED3
 
-#define VRES_ERRNO_MAX          1000
-#define VRES_KEY_MAX            0x7fffffff
-#define VRES_ID_MAX             0x7fffffff
-#define VRES_IO_MAX             ((1 << 14) - 1)
-#define VRES_BUF_MAX            ((1 << 16) - 1)
-#define VRES_INDEX_MAX          ((1 << 30) - 1)
-#define VRES_MANAGER_MAX        16
+#define VRES_ERRNO_MAX   1000
+#define VRES_KEY_MAX     0x7fffffff
+#define VRES_ID_MAX      0x7fffffff
+#define VRES_IO_MAX      ((1 << 14) - 1)
+#define VRES_BUF_MAX     ((1 << 16) - 1)
+#define VRES_INDEX_MAX   ((1 << 30) - 1)
+#define VRES_MANAGER_MAX 16
 
 typedef key_t vres_key_t;
 typedef int32_t vres_id_t;

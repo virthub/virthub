@@ -97,7 +97,7 @@ unlock:
     else if (vres_need_lock(resource))
         vres_unlock(resource);
 reply:
-    if (!vres_need_half_lock(resource)) {
+    if (vres_need_reply(resource)) {
         if (rep)
             klnk_send(desc, (void *)rep, rep->length + sizeof(vres_reply_t));
         else

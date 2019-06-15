@@ -65,6 +65,7 @@ bool vres_is_sync(vres_op_t op);
 bool vres_is_local(vres_op_t op);
 
 bool vres_need_lock(vres_t *resource);
+bool vres_need_reply(vres_t *resource);
 bool vres_need_wrlock(vres_t *resource);
 bool vres_need_half_lock(vres_t *resource);
 bool vres_need_timed_lock(vres_t *resource);

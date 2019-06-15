@@ -3,9 +3,9 @@
 
 #include <list.h>
 #include <errno.h>
+#include <common.h>
 #include <pthread.h>
 #include "resource.h"
-#include "common.h"
 #include "trace.h"
 
 #define VRES_RWLOCK_GROUP_SIZE 256

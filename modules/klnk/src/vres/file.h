@@ -9,9 +9,9 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <unistd.h>
+#include <common.h>
 #include <stdbool.h>
 #include <pthread.h>
-#include "common.h"
 
 #define FILE_RDONLY    VRES_RDONLY
 #define FILE_RDWR      VRES_RDWR

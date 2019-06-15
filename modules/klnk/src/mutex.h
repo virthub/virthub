@@ -4,7 +4,7 @@
 #include "common.h"
 #include "resource.h"
 
-#define KLNK_MUTEX_GROUP_SIZE 64
+#define KLNK_MUTEX_GROUP_SIZE 256
 #define KLNK_MUTEX_ENTRY_SIZE 4
 
 typedef unsigned long klnk_mutex_entry_t;

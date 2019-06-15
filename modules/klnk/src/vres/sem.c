@@ -412,7 +412,7 @@ static int vres_sem_getncnt(vres_t *resource, int semnum)
     char path[VRES_PATH_MAX];
 
     vres_get_record_path(resource, path);
-    ret = vres_record_first(path, &index);
+    ret = vres_record_head(path, &index);
     if (-ENOENT == ret)
         return 0;
     else if (ret)
@@ -451,7 +451,7 @@ static int vres_sem_getzcnt(vres_t *resource, int semnum)
     char path[VRES_PATH_MAX];
 
     vres_get_record_path(resource, path);
-    ret = vres_record_first(path, &index);
+    ret = vres_record_head(path, &index);
     if (-ENOENT == ret)
         return 0;
     else if (ret)

@@ -8,7 +8,7 @@
 * The configurations of Virthub are contained in *conf* directory.
 
 ## **Dependencies**
-* aclocal, autoconf, autoheader, automake, autoreconf
+* aclocal, autoconf, autoheader, automake, autoreconf, fuse
 
 ## **Version**
 * Stable version: 0.0.2
