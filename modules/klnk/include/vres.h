@@ -13,17 +13,7 @@
 #include <sys/mman.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
-
-#define ENABLE_TTL
-#define ENABLE_PRIORITY
-#define ENABLE_LIVE_TIME
-#define ENABLE_TIME_SYNC
-#define ENABLE_FAST_REPLY
-#define ENABLE_DYNAMIC_OWNER
-
-// #define ENABLE_PGSAVE
-// #define ENABLE_TSKPUT
-// #define ENABLE_BARRIER
+#include <defaults.h>
 
 #define NO_MANAGER       0
 #define STATIC_MANAGER   1
@@ -174,7 +164,6 @@ typedef struct vres_arg {
 
 typedef struct vres_req {
     vres_t resource;
-    vres_desc_t src;
     int length;
     char buf[0];
 } vres_req_t;

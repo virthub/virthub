@@ -143,55 +143,6 @@ void vres_get_priority_path(vres_t *resource, char *path)
 }
 
 
-int vres_parse(const char *path, vres_t *resource, unsigned long *addr, size_t *inlen, size_t *outlen)
-{
-    int i;
-    char *pend;
-    const char *ptr = path;
-
-    if (*ptr++ != '/')
-        return -EINVAL;
-
-    resource->cls = (vres_cls_t)strtoul(ptr, &pend, 16);
-    if (ptr == pend)
-        return -EINVAL;
-
-    ptr = pend + 1;
-    resource->key = (vres_key_t)strtoul(ptr, &pend, 16);
-    if (ptr == pend)
-        return -EINVAL;
-
-    for (i = 0; i < 4; i++) {
-        ptr = pend + 1;
-        resource->entry[i] = (vres_entry_t)strtoul(ptr, &pend, 16);
-        if (ptr == pend)
-            return -EINVAL;
-    }
-
-    if (resource->cls != VRES_CLS_TSK)
-        resource->owner = vres_get_id(resource);
-    else
-        resource->owner = resource->key;
-
-    ptr = pend + 1;
-    *addr = strtoul(ptr, &pend, 16);
-    if (ptr == pend)
-        return -EINVAL;
-
-    ptr = pend + 1;
-    *inlen = (size_t)strtoul(ptr, &pend, 16);
-    if (ptr == pend)
-        return -EINVAL;
-
-    ptr = pend + 1;
-    *outlen = (size_t)strtoul(ptr, &pend, 16);
-    if (ptr == pend)
-        return -EINVAL;
-
-    return 0;
-}
-
-
 int vres_path_join(const char *p1, const char *p2, char *path)
 {
     if (strlen(p1) + strlen(p2) + 1 >= VRES_PATH_MAX)

@@ -639,12 +639,15 @@ void *vres_prio_select(void *arg)
                             assert(vres_need_half_lock(pres));
                             lock = vres_lock_top(pres);
                             if (lock) {
-                                vres_lock_buttom(lock);
-                                reply = vres_proc(req, VRES_REDO | VRES_PRIO);
-                                vres_unlock(pres);
+                                ret = vres_lock_buttom(lock);
+                                if (!ret)
+                                    reply = vres_proc(req, VRES_REDO | VRES_PRIO);
+                                else
+                                    log_resource_err(resource, "failed to lock");
+                                vres_unlock(pres, lock);
                             } else {
-                                log_resource_err(resource, "failed to lock");
-                                ret = -EINVAL;
+                                log_resource_err(resource, "failed to get lock");
+                                ret = -ENOENT;
                             }
                         } else
                             reply = vres_proc(req, VRES_REDO | VRES_PRIO);
@@ -781,7 +784,7 @@ int vres_prio_check(vres_req_t *req, int flags)
         }
     }
     vres_prio_unlock(resource);
-    log_prio_check(resource, "finished! (need to retry)");
+    log_prio_check(resource, ">> finished << (need to retry)");
     return -EAGAIN;
 out:
 #ifdef ENABLE_LIVE_TIME
@@ -789,7 +792,7 @@ out:
         ret = vres_prio_update(resource, val, live);
 #endif
     vres_prio_unlock(resource);
-    log_prio_check(resource, "finished!");
+    log_prio_check(resource, ">> finished <<");
     return ret;
 }
 

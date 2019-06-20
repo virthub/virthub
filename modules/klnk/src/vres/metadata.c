@@ -11,13 +11,13 @@
 #define CURSOR_SIZE 32
 
 int metadata_stat = 0;
+pthread_mutex_t metadata_mutex;
 redisContext *metadata_ctx = NULL;
 
 void vres_metadata_init()
 {
     if (metadata_stat & VRES_STAT_INIT)
         return;
-
     metadata_ctx = redisConnect(master_addr, MDS_PORT);
     if (!metadata_ctx || metadata_ctx->err) {
         if (metadata_ctx) {
@@ -27,6 +27,7 @@ void vres_metadata_init()
             log_err("no contex");
         exit(1);
     }
+    pthread_mutex_init(&metadata_mutex, NULL);
     metadata_stat |= VRES_STAT_INIT;
 }
 
@@ -52,6 +53,8 @@ int vres_metadata_read(char *path, char *buf, int len)
         log_err("invalid path");
         return ret;
     }
+    log_metadata_read(path);
+    pthread_mutex_lock(&metadata_mutex);
     reply = redisCommand(metadata_ctx, "GET %s", path);
     if (reply->len == len) {
         memcpy(buf, reply->str, reply->len);
@@ -61,6 +64,7 @@ int vres_metadata_read(char *path, char *buf, int len)
         ret = -EINVAL;
     }
     freeReplyObject(reply);
+    pthread_mutex_unlock(&metadata_mutex);
     return ret;
 }
 
@@ -77,8 +81,10 @@ int vres_metadata_write(char *path, char *buf, int len)
         log_err("invalid path");
         return ret;
     }
+    pthread_mutex_lock(&metadata_mutex);
     reply = redisCommand(metadata_ctx, "SET %s %b", path, buf, len);
     freeReplyObject(reply);
+    pthread_mutex_unlock(&metadata_mutex);
     return 0;
 }
 
@@ -109,17 +115,17 @@ int vres_metadata_create(char *path, char *buf, int len)
         return -EEXIST;
     ret = vres_metadata_write(path, buf, len);
     if (ret) {
-        log_err("failed to write");
+        log_err("failed to write, path=%s", path);
         return ret;
     }
     tmp = (char *)malloc(len);
     if (!tmp) {
-        log_err("no memory");
+        log_err("no memory, path=%s", path);
         return -ENOMEM;
     }
     ret = vres_metadata_read(path, tmp, len);
     if (ret) {
-        log_err("failed to read");
+        log_err("failed to read, path=%s", path);
         goto out;
     }
     if (memcmp(tmp, buf, len))
@@ -175,7 +181,6 @@ int vres_metadata_count(char *path)
             return -EINVAL;
         }
     } while (strcmp(cursor, "0"));
-
     return count;
 }
 
@@ -216,7 +221,6 @@ unsigned long vres_metadata_max(char *path)
                     tmp = strtoul(start, &end, 16);
                     if (start == end)
                         continue;
-
                     if (tmp > val)
                         val = tmp;
                 }
@@ -229,6 +233,5 @@ unsigned long vres_metadata_max(char *path)
         }
         freeReplyObject(reply);
     } while (strcmp(cursor, "0"));
-
     return val;
 }

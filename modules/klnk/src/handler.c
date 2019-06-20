@@ -38,6 +38,7 @@ static inline void *klnk_handler(void *arg)
     int ret;
     vres_req_t *req;
     vres_t *resource;
+    vres_lock_t *lock = NULL;
     vres_reply_t *rep = NULL;
     klnk_desc_t desc = (klnk_desc_t)arg;
 
@@ -48,20 +49,13 @@ static inline void *klnk_handler(void *arg)
         goto out;
     }
     resource = &req->resource;
-    if (req->src.id > 0) {
-        ret = vres_save_peer(vres_get_id(resource), &req->src);
-        if (ret) {
-            log_resource_err(resource, "failed to save peer");
-            goto out;
-        }
-    }
     log_klnk_handler(resource, ">-- handler (start) --<");
     if (vres_need_timed_lock(resource))
         ret = vres_lock_timeout(resource, VRES_LOCK_TIMEOUT);
     else if (vres_need_half_lock(resource)) {
         int err;
-        vres_lock_t *lock = vres_lock_top(resource);
 
+        lock = vres_lock_top(resource);
         if (!lock) {
             log_resource_err(resource, "failed to lock");
             ret = -EINVAL;
@@ -73,7 +67,7 @@ static inline void *klnk_handler(void *arg)
         }
         klnk_close(desc);
         if (!ret)
-            vres_lock_buttom(lock);
+            ret = vres_lock_buttom(lock);
         else if (lock)
             vres_unlock_top(lock);
     } else if (vres_need_wrlock(resource))
@@ -83,8 +77,10 @@ static inline void *klnk_handler(void *arg)
     if (ret)
         goto reply;
     ret = vres_check_resource(resource);
-    if (ret)
+    if (ret) {
+        klnk_handler_err(req, ret);
         goto unlock;
+    }
     rep = vres_proc(req, 0);
     ret = vres_get_errno(rep);
     if (ret < 0) {
@@ -95,7 +91,7 @@ unlock:
     if (vres_need_wrlock(resource))
         vres_rwlock_unlock(resource);
     else if (vres_need_lock(resource))
-        vres_unlock(resource);
+        vres_unlock(resource, lock);
 reply:
     if (vres_need_reply(resource)) {
         if (rep)

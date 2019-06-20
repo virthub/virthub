@@ -28,9 +28,9 @@
 
 #ifdef SHOW_RESOURCE
 #define LOG_RESOURCE_LOOKUP
+#define LOG_RESOURCE_GET_PEER
 
 #ifdef SHOW_MORE
-#define LOG_RESOURCE_GET_PEER
 #define LOG_RESOURCE_SAVE_PEER
 #endif
 #endif

@@ -26,12 +26,11 @@ void klnk_mutex_init()
 
     if (mutex_stat)
         return;
-
     for (i = 0; i < KLNK_MUTEX_GROUP_SIZE; i++) {
         pthread_mutex_init(&mutex_group[i].mutex, NULL);
         rbtree_new(&mutex_group[i].tree, klnk_mutex_compare);
     }
-    mutex_stat = 1;
+    mutex_stat = VRES_STAT_INIT;
 }
 
 

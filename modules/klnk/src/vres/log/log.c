@@ -6,6 +6,7 @@
  */
 
 #include "log.h"
+#include <vres.h>
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
@@ -91,15 +92,18 @@ char flg_list[FLG_MAX][32] = {
     "curr",     // CURRENT        (0x00200000)
     "save"};    // SAVE           (0x00400000)
 
-char eio[32]    = "EIO";
-char eperm[32]  = "EPERM";
-char eexist[32] = "EEXIST";
-char eagain[32] = "EAGAIN";
-char einval[32] = "EINVAL";
-char enoent[32] = "ENOENT";
-char efault[32] = "EFAULT";
-char enomem[32] = "ENOMEM";
-char eacces[32] = "EACCES";
+char eok[32]      = "EOK";
+char eio[32]      = "EIO";
+char ermid[32]    = "ERMID";
+char eperm[32]    = "EPERM";
+char eexist[32]   = "EEXIST";
+char eagain[32]   = "EAGAIN";
+char einval[32]   = "EINVAL";
+char enoent[32]   = "ENOENT";
+char efault[32]   = "EFAULT";
+char enomem[32]   = "ENOMEM";
+char eacces[32]   = "EACCES";
+char enoowner[32] = "ENOOWNER";
 
 char *log_get_op(int op)
 {
@@ -128,8 +132,12 @@ char *log_get_err(int err)
     if (val < 0)
         val = -val;
     switch (val) {
+    case EOK:
+        return eok;
     case EIO:
         return eio;
+    case ERMID:
+        return ermid;
     case EPERM:
         return eperm;
     case EEXIST:
@@ -146,6 +154,8 @@ char *log_get_err(int err)
         return eagain;
     case EACCES:
         return eacces;
+    case ENOOWNER:
+        return enoowner;
     default:
         p = errnum[cnt++];
         if (ERR_ENT_MAX == cnt)

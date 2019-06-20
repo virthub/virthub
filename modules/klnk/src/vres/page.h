@@ -22,7 +22,7 @@
 #define VRES_PAGE_WAIT            0x00040000
 #define VRES_PAGE_UPDATE          0x00080000
 #define VRES_PAGE_EXCL            0x00100000
-#define VRES_PAGE_CURR            0x00200000
+#define VRES_PAGE_CMPL            0x00200000
 #define VRES_PAGE_SAVE            0x00400000
 
 #define VRES_PAGE_DIFF_SIZE       ((VRES_PAGE_NR_VERSIONS * VRES_LINE_MAX + BITS_PER_BYTE - 1) / BITS_PER_BYTE)
@@ -134,9 +134,9 @@ static inline void vres_pg_mkupdate(vres_page_t *page)
     page->flags |= VRES_PAGE_UPDATE;
 }
 
-static inline void vres_pg_mkcurr(vres_page_t *page)
+static inline void vres_pg_mkcmpl(vres_page_t *page)
 {
-    page->flags |= VRES_PAGE_CURR;
+    page->flags |= VRES_PAGE_CMPL;
 }
 
 static inline void vres_pg_mkpgsave(vres_page_t *page)
@@ -179,9 +179,9 @@ static inline void vres_pg_clrupdate(vres_page_t *page)
     page->flags &= ~VRES_PAGE_UPDATE;
 }
 
-static inline void vres_pg_clrcurr(vres_page_t *page)
+static inline void vres_pg_clrcmpl(vres_page_t *page)
 {
-    page->flags &= ~VRES_PAGE_CURR;
+    page->flags &= ~VRES_PAGE_CMPL;
 }
 
 static inline void vres_pg_clrpgsave(vres_page_t *page)
@@ -251,9 +251,9 @@ static inline int vres_pg_update(vres_page_t *page)
     return page->flags & VRES_PAGE_UPDATE;
 }
 
-static inline int vres_pg_curr(vres_page_t *page)
+static inline int vres_pg_cmpl(vres_page_t *page)
 {
-    return page->flags & VRES_PAGE_CURR;
+    return page->flags & VRES_PAGE_CMPL;
 }
 
 static inline int vres_pg_pgsave(vres_page_t *page)

@@ -33,6 +33,7 @@ typedef struct vres_lock_group {
 } vres_lock_group_t;
 
 typedef struct vres_lock {
+    vres_lock_group_t *grp;
     vres_lock_desc_t desc;
     pthread_mutex_t mutex;
     struct list_head list;
@@ -47,12 +48,11 @@ typedef struct vres_lock_list {
 } vres_lock_list_t;
 
 void vres_lock_init();
-void vres_unlock(vres_t *resource);
-void vres_unlock_top(vres_lock_t *lock);
-vres_lock_t *vres_lock_top(vres_t *resource);
-
 int vres_lock(vres_t *resource);
 int vres_lock_buttom(vres_lock_t *lock);
+void vres_unlock_top(vres_lock_t *lock);
+vres_lock_t *vres_lock_top(vres_t *resource);
+void vres_unlock(vres_t *resource, vres_lock_t *lock);
 int vres_lock_timeout(vres_t *resource, vres_time_t timeout);
 
 #endif

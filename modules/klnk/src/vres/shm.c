@@ -13,7 +13,8 @@
 #include "mgr/dmgr.h"
 #endif
 
-int vres_shm_htab[VRES_PAGE_NR_HOLDERS][VRES_LINE_MAX];
+int shm_stat = 0;
+int shm_htab[VRES_PAGE_NR_HOLDERS][VRES_LINE_MAX];
 
 static inline int vres_shm_calc_htab(int *htab, size_t length, int nr_holders)
 {
@@ -36,17 +37,15 @@ static inline int vres_shm_calc_htab(int *htab, size_t length, int nr_holders)
 }
 
 
-void vres_shm_init_htab()
+void vres_shm_init()
 {
     int i;
-    static bool init = false;
 
-    if (init)
+    if (shm_stat)
         return;
-    else
-        init = true;
     for (i = 0; i < VRES_PAGE_NR_HOLDERS; i++)
-        vres_shm_calc_htab(vres_shm_htab[i], VRES_LINE_MAX, i + 1);
+        vres_shm_calc_htab(shm_htab[i], VRES_LINE_MAX, i + 1);
+    shm_stat = VRES_STAT_INIT;
 }
 
 
@@ -81,11 +80,10 @@ bool vres_shm_is_owner(vres_t *resource)
 }
 
 
-int vres_shm_init(vres_t *resource)
+int vres_shm_ipc_init(vres_t *resource)
 {
     int ret = 0;
 
-    vres_shm_init_htab();
 #ifdef ENABLE_PRIORITY
     if (!vres_is_owner(resource))
         ret = vres_prio_create(resource, true);
@@ -189,7 +187,7 @@ int *vres_shm_get_htab(vres_page_t *page)
     if (page->nr_holders <= 0)
         return NULL;
     else
-        return vres_shm_htab[page->nr_holders - 1];
+        return shm_htab[page->nr_holders - 1];
 }
 
 
@@ -482,8 +480,9 @@ int vres_shm_fast_reply(vres_page_t *page, vres_req_t *req)
             new_arg->arg.owner = page->owner;
             vres_set_flags(&res, VRES_CRIT);
         }
-        if (klnk_io_sync(&res, (char *)new_arg, size, NULL, 0, &src)) {
-            log_resource_err(resource, "failed to send request");
+        ret = klnk_io_sync(&res, (char *)new_arg, size, NULL, 0, &src);
+        if (ret) {
+            log_resource_err(resource, "failed to send request, ret=%s", log_get_err(ret));
             ret = -EFAULT;
         }
 out:
@@ -711,7 +710,7 @@ int vres_shm_check_coverage(vres_page_t *page, int line)
 
     if ((n >= 0) && (n < VRES_PAGE_NR_HOLDERS)
         && (line >= 0) && (line < VRES_LINE_MAX))
-        return vres_shm_htab[n][line] == page->hid;
+        return shm_htab[n][line] == page->hid;
     else
         return 0;
 }
@@ -838,8 +837,9 @@ int vres_shm_check_active_holder(vres_page_t *page, vres_req_t *req)
             new_arg->arg.owner = page->owner;
             vres_set_flags(&res, VRES_CRIT);
         }
-        if (klnk_io_sync(&res, (char *)new_arg, size, NULL, 0, &src)) {
-            log_resource_err(resource, "failed to send request");
+        ret = klnk_io_sync(&res, (char *)new_arg, size, NULL, 0, &src);
+        if (ret) {
+            log_resource_err(resource, "failed to send request, ret=%s", log_get_err(ret));
             ret = -EFAULT;
         }
 out:
@@ -1264,7 +1264,7 @@ int vres_shm_deliver(vres_page_t *page, vres_req_t *req)
     }
     vres_pg_clrwait(page);
     vres_pg_clrready(page);
-    vres_pg_clrcurr(page);
+    vres_pg_clrcmpl(page);
     vres_shm_clear_updates(resource, page);
     page->hid = vres_page_get_hid(page, src);
     page->clk = page->version;
@@ -1295,7 +1295,7 @@ int vres_shm_update_peers(vres_t *resource, vres_page_t *page, vres_shm_peer_inf
         int i;
 
         if ((info->total > VRES_PAGE_NR_HOLDERS) || (info->total < 0)) {
-            log_resource_err(resource, "invalid peer info");
+            log_resource_err(resource, "invalid peer info, total=%d", info->total);
             return -EINVAL;
         }
         for (i = 0; i < info->total; i++) {
@@ -1341,7 +1341,7 @@ int vres_shm_notify_proposer(vres_req_t *req)
     if (clk > page->clk) {
         if (!vres_pg_own(page)) {
             vres_pg_clrready(page);
-            vres_pg_clrcurr(page);
+            vres_pg_clrcmpl(page);
             vres_shm_clear_updates(resource, page);
         }
         log_shm_clock_update(resource, page->clk, clk);
@@ -1371,7 +1371,7 @@ int vres_shm_notify_proposer(vres_req_t *req)
         if (flags & VRES_RDWR)
             page->count -= info->total;
         else if (flags & VRES_RDONLY) {
-            if (vres_pg_curr(page))
+            if (vres_pg_cmpl(page))
                 ready = true;
             else
                 vres_pg_mkready(page);
@@ -1396,7 +1396,7 @@ int vres_shm_notify_proposer(vres_req_t *req)
             if (vres_pg_ready(page))
                 ready = true;
             else
-                vres_pg_mkcurr(page);
+                vres_pg_mkcmpl(page);
         }
     } else {
         log_resource_err(resource, "invalid flag");
@@ -1429,15 +1429,17 @@ int vres_shm_call(vres_arg_t *arg)
     vres_file_entry_t *entry = (vres_file_entry_t *)arg->entry;
     vres_page_t *page = vres_file_get_desc(entry, vres_page_t);
 
-    if (vres_shm_need_priority(resource, page)) {
+    if (vres_shm_need_priority(resource, page))
+        need_priority = true;
+    vres_page_put(resource, entry);
+    if (need_priority) {
         ret = vres_prio_set_busy(resource);
         if (ret) {
-            log_resource_err(resource, "failed to update priority");
+            log_resource_err(resource, "failed to check priority");
             goto out;
         }
-        need_priority = true;
     }
-    ret = klnk_broadcast(arg);
+    ret = klnk_rpc_broadcast(arg);
     if (ret) {
         log_resource_err(resource, "failed to broadcast");
         goto out;
@@ -1445,12 +1447,11 @@ int vres_shm_call(vres_arg_t *arg)
     if (need_priority) {
         ret = vres_prio_set_idle(resource);
         if (ret) {
-            log_resource_err(resource, "failed to update priority");
+            log_resource_err(resource, "failed to check priority");
             goto out;
         }
     }
 out:
-    vres_page_put(resource, entry);
     return ret;
 }
 
@@ -1499,8 +1500,9 @@ int vres_shm_handle_zeropage(vres_t *resource, vres_page_t *page)
         if (flags & VRES_RDWR)
             info->total = 1;
         vres_set_flags(&res, VRES_CRIT);
-        if (klnk_io_sync(&res, (char *)arg, size, NULL, 0, &src)) {
-            log_resource_err(resource, "failed to send request");
+        ret = klnk_io_sync(&res, (char *)arg, size, NULL, 0, &src);
+        if (ret) {
+            log_resource_err(resource, "failed to send request, ret=%s", log_get_err(ret));
             ret = -EFAULT;
         }
 out:
@@ -1735,6 +1737,7 @@ int vres_shm_check_ttl(vres_req_t *req)
 vres_reply_t *vres_shm_fault(vres_req_t *req, int flags)
 {
     int ret = 0;
+    vres_reply_t *reply = NULL;
     vres_t *resource = &req->resource;
     vres_shmfault_arg_t *arg = (vres_shmfault_arg_t *)req->buf;
 
@@ -1742,7 +1745,7 @@ vres_reply_t *vres_shm_fault(vres_req_t *req, int flags)
     ret = vres_shm_check_ttl(req);
     if (ret) {
         vres_shm_handle_err(resource, ret);
-        return NULL;
+        goto out;
     }
 #endif
     switch (arg->cmd) {
@@ -1770,13 +1773,14 @@ vres_reply_t *vres_shm_fault(vres_req_t *req, int flags)
     }
     if (ret) {
         if (flags & VRES_REDO)
-            return vres_reply_err(ret);
+            reply = vres_reply_err(ret);
         else {
             vres_shm_handle_err(resource, ret);
             log_resource_err(resource, "*failed* to handle (cmd=%s)", log_get_shm_cmd(arg->cmd));
         }
     }
-    return NULL;
+out:
+    return reply;
 }
 
 
@@ -1814,9 +1818,6 @@ int vres_shm_destroy(vres_t *resource)
     req->length = sizeof(vres_shmctl_arg_t);
     vres_set_op(&req->resource, VRES_OP_SHMCTL);
     vres_set_id(&req->resource, resource->owner);
-    ret = vres_get_peer(resource->owner, &req->src);
-    if (ret)
-        return ret;
     return vres_shm_rmid(req);
 }
 
@@ -1860,7 +1861,7 @@ vres_reply_t *vres_shm_shmctl(vres_req_t *req, int flags)
         break;
     case SHM_INFO:
     {
-        //Fixme: global information of shm is not available
+        //TODO: global information of shm is not available
         struct shmid_ds shmid;
         struct shm_info *shm_info;
 
@@ -1939,7 +1940,7 @@ int vres_shm_do_get_peers(vres_t *resource, vres_page_t *page, vres_peers_t *pee
         }
 #ifdef ENABLE_FAST_REPLY
         if (vres_get_flags(resource) & VRES_RDONLY) {
-            int total = min(page->nr_candidates, VRES_SHM_NR_PROBABLE_HOLDERS);
+            int total = min(page->nr_candidates, VRES_SHM_NR_PEERS);
 
             for (i = 0; i < total; i++) {
                 vres_id_t id = page->candidates[i].id;

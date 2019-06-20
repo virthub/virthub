@@ -14,7 +14,6 @@
 #include "trace.h"
 #include "mutex.h"
 #include "rpc.h"
-#include "io.h"
 #ifdef ENABLE_BARRIER
 #include "barrier.h"
 #endif

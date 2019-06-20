@@ -197,7 +197,7 @@ int vres_ckpt_suspend(vres_t *resource, int flags)
         return vres_ckpt_do_notify_members(resource);
     }
     log_ckpt("clear barrier ...");
-    ret = vres_barrier_clear(resource);
+    ret = klnk_barrier_clear(resource);
     if (ret) {
         log_resource_err(resource, "failed to clear barrier");
         return ret;
@@ -207,7 +207,7 @@ int vres_ckpt_suspend(vres_t *resource, int flags)
     if (ret)
         log_resource_err(resource, "failed to suspend");
     log_ckpt("set barrier ...");
-    vres_barrier_set(resource);
+    klnk_barrier_set(resource);
     log_ckpt_suspend(resource);
     return ret;
 }
@@ -251,7 +251,7 @@ int vres_ckpt_resume(vres_t *resource, int flags)
             log_resource_err(resource, "failed to notify");
     } else {
         log_ckpt("clear barrier ...");
-        ret = vres_barrier_clear(resource);
+        ret = klnk_barrier_clear(resource);
         if (ret) {
             log_resource_err(resource, "failed to set barrier");
             return ret;
@@ -261,7 +261,7 @@ int vres_ckpt_resume(vres_t *resource, int flags)
         if (ret)
             log_resource_err(resource, "failed to resume");
         log_ckpt("set barrier ...");
-        vres_barrier_set(resource);
+        klnk_barrier_set(resource);
     }
     return ret;
 }

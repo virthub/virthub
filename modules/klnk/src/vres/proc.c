@@ -138,7 +138,7 @@ vres_reply_t *vres_proc(vres_req_t *req, int flags)
             break;
         }
     }
-    log_proc(req, "finished");
+    log_proc(req, ">> finished <<");
     return reply;
 }
 
@@ -154,7 +154,7 @@ int vres_proc_local(vres_arg_t *arg)
     case VRES_OP_SEMGET:
         return vres_ipc_get(resource, vres_sem_create, NULL);
     case VRES_OP_SHMGET:
-        return vres_ipc_get(resource, vres_shm_create, vres_shm_init);
+        return vres_ipc_get(resource, vres_shm_create, vres_shm_ipc_init);
     case VRES_OP_SHMPUT:
         return vres_ipc_put(resource);
     case VRES_OP_TSKGET:

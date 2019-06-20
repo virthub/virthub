@@ -31,7 +31,6 @@
 #define vres_set_err(p, err) do { (p)->length = err; } while (0)
 #define vres_is_generic_err(err) ((err) > -VRES_ERRNO_MAX && (err) < 0)
 
-#define vres_addr2str(addr) inet_ntoa(addr)
 #define vres_result_check(p, type) (type *)((p)->buf)
 #define vres_get_reply_owner(resource) ((resource)->key)
 

@@ -18,8 +18,8 @@
 #include "line.h"
 #include "tsk.h"
 
-#define VRES_SHM_CHECK_INTERVAL      2000     // usec
-#define VRES_SHM_NR_PROBABLE_HOLDERS (VRES_PAGE_NR_HOLDERS - 1)
+#define VRES_SHM_CHECK_INTERVAL      2000 // usec
+#define VRES_SHM_NR_PEERS            (VRES_PAGE_NR_HOLDERS / 2)
 
 #define VRES_SHMMAX                  0x2000000                                         /* max shared seg size (bytes) */
 #define VRES_SHMMIN                  1                                                 /* min shared seg size (bytes) */
@@ -27,8 +27,8 @@
 #define VRES_SHMALL                  (VRES_SHMMAX / PAGE_SIZE * (VRES_SHMMNI / 16))    /* max shm system wide (pages) */
 #define VRES_SHMSEG                  VRES_SHMMNI                                       /* max shared segs per process */
 
-#define VRES_SHM_NR_AREAS            3
-#define VRES_SHM_NR_VISITS           1
+#define VRES_SHM_NR_AREAS            4
+#define VRES_SHM_NR_VISITS           2
 
 #ifdef SHOW_SHM
 #define LOG_SHM_OWNER
@@ -126,11 +126,12 @@ typedef struct vres_shm_cache {
     vres_version_t version;
 } vres_shm_cache_t;
 
+void vres_shm_init();
 int vres_shm_call(vres_arg_t *arg);
-int vres_shm_init(vres_t *resource);
 int vres_shm_create(vres_t *resource);
 int vres_shm_destroy(vres_t *resource);
 void vres_shm_put_arg(vres_arg_t *arg);
+int vres_shm_ipc_init(vres_t *resource);
 int vres_shm_check_arg(vres_arg_t *arg);
 int vres_shm_get_arg(vres_t *resource, vres_arg_t *arg);
 vres_reply_t *vres_shm_fault(vres_req_t *req, int flags);

@@ -3,8 +3,14 @@
 
 #include <hiredis/hiredis.h>
 #include <stdbool.h>
+#include <pthread.h>
 #include <vres.h>
-#include "log.h"
+
+#ifdef SHOW_METADATA
+#define LOG_METADATA_READ
+#endif
+
+#include "log_metadata.h"
 
 void vres_metadata_init();
 int vres_metadata_count(char *path);

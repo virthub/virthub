@@ -10,54 +10,48 @@
 #include <sched.h>
 #endif
 
+#define ENABLE_TTL
+#define ENABLE_PRIORITY
+#define ENABLE_LIVE_TIME
+#define ENABLE_TIME_SYNC
+#define ENABLE_FAST_REPLY
+#define ENABLE_DYNAMIC_OWNER
+
+// #define ENABLE_PGSAVE
+// #define ENABLE_TSKPUT
+// #define ENABLE_BARRIER
+
+#ifdef SHOW_KLNK
 #define LOG_KLNK_OPEN
 #define LOG_KLNK_HANDLER
-#define LOG_KLNK_BROADCAST
+#endif
+
+#ifdef SHOW_IO
 #define LOG_KLNK_IO_SYNC
 #define LOG_KLNK_IO_SYNC_CONNECT
-// #define LOG_KLNK_IO_SYNC_SEND
-// #define LOG_KLNK_IO_SYNC_OUTPUT
 
-#ifdef LOG_KLNK_BROADCAST
-#define log_klnk_broadcast log_resource_ln
-#else
-#define log_klnk_broadcast(...) do {} while (0)
+#ifdef SHOW_MORE
+#define LOG_KLNK_IO_CREATE
+#define LOG_KLNK_IO_SYNC_SEND
+#define LOG_KLNK_IO_SYNC_OUTPUT
+#endif
 #endif
 
-#ifdef LOG_KLNK_HANDLER
-#define log_klnk_handler log_resource_info
-#else
-#define log_klnk_handler(...) do {} while (0)
+#ifdef SHOW_BARRIER
+#define LOG_KLNK_BARRIER_SET
+#define LOG_KLNK_BARRIER_WAIT
+#define LOG_KLNK_BARRIER_CLEAR
+#define LOG_KLNK_BARRIER_WAIT_TIMEOUT
 #endif
 
-#ifdef LOG_KLNK_IO_SYNC
-#define log_klnk_io_sync log_resource_info
-#else
-#define log_klnk_io_sync(...) do {} while (0)
+#ifdef SHOW_RPC
+#define LOG_KLNK_RPC_GET
+#define LOG_KLNK_RPC_PUT
+#define LOG_KLNK_RPC_WAIT
+#define LOG_KLNK_RPC_BROADCAST
 #endif
 
-#ifdef LOG_KLNK_IO_SYNC_SEND
-#define log_klnk_io_sync_send(resource) log_resource_info(resource, "start to send")
-#else
-#define log_klnk_io_sync_send(...) do {} while (0)
-#endif
-
-#ifdef LOG_KLNK_IO_SYNC_OUTPUT
-#define log_klnk_io_sync_output(resource) log_resource_info(resource, "get output")
-#else
-#define log_klnk_io_sync_output(...) do {} while (0)
-#endif
-
-#ifdef LOG_KLNK_IO_SYNC_CONNECT
-#define log_klnk_io_sync_connect(resource, peer) log_resource_info(resource, "connect to %s (id=%d)", vres_addr2str(peer.address), peer.id)
-#else
-#define log_klnk_io_sync_connect(...) do {} while (0)
-#endif
-
-#ifdef LOG_KLNK_OPEN
-#define log_klnk_open log_resource_info
-#else
-#define log_klnk_open(...) do {} while (0)
-#endif
+#include "info.h"
+#include "common.h"
 
 #endif

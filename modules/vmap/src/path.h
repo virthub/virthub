@@ -3,7 +3,6 @@
 
 #include <stdio.h>
 #include <sys/stat.h>
-
 #include "file.h"
 
 #define VMAP_PATH_MAX      256

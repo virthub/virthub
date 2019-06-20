@@ -213,6 +213,7 @@ static inline int klnk_init(char *addr)
     }
     vres_init();
     klnk_mutex_init();
+    klnk_barrier_init();
     ret = klnk_load_conf();
     if (ret) {
         log_err("failed to load conf");
@@ -254,6 +255,47 @@ inline bool klnk_check_bypass(vres_t *resource)
 }
 
 
+int klnk_parse(const char *path, vres_t *resource, unsigned long *addr, size_t *inlen, size_t *outlen)
+{
+    int i;
+    char *pend;
+    const char *ptr = path;
+
+    if (*ptr++ != '/')
+        return -EINVAL;
+    resource->cls = (vres_cls_t)strtoul(ptr, &pend, 16);
+    if (ptr == pend)
+        return -EINVAL;
+    ptr = pend + 1;
+    resource->key = (vres_key_t)strtoul(ptr, &pend, 16);
+    if (ptr == pend)
+        return -EINVAL;
+    for (i = 0; i < 4; i++) {
+        ptr = pend + 1;
+        resource->entry[i] = (vres_entry_t)strtoul(ptr, &pend, 16);
+        if (ptr == pend)
+            return -EINVAL;
+    }
+    if (resource->cls != VRES_CLS_TSK)
+        resource->owner = vres_get_id(resource);
+    else
+        resource->owner = resource->key;
+    ptr = pend + 1;
+    *addr = strtoul(ptr, &pend, 16);
+    if (ptr == pend)
+        return -EINVAL;
+    ptr = pend + 1;
+    *inlen = (size_t)strtoul(ptr, &pend, 16);
+    if (ptr == pend)
+        return -EINVAL;
+    ptr = pend + 1;
+    *outlen = (size_t)strtoul(ptr, &pend, 16);
+    if (ptr == pend)
+        return -EINVAL;
+    return 0;
+}
+
+
 int klnk_open(const char *path, struct fuse_file_info *fi)
 {
     int ret = 0;
@@ -265,7 +307,7 @@ int klnk_open(const char *path, struct fuse_file_info *fi)
     vres_arg_t *parg = &arg;
     vres_t *pres = &resource;
 
-    ret = vres_parse(path, pres, &addr, &inlen, &outlen);
+    ret = klnk_parse(path, pres, &addr, &inlen, &outlen);
     if (ret) {
         log_err("failed to get resource, ret=%s", log_get_err(ret));
         return ret;
@@ -277,25 +319,23 @@ int klnk_open(const char *path, struct fuse_file_info *fi)
     }
     log_klnk_open(pres, ">-- open (begin) --<");
 #ifdef ENABLE_BARRIER
-    vres_barrier_wait_timeout(pres, VRES_BARRIER_TIMEOUT);
+    klnk_barrier_wait_timeout(pres, KLNK_BARRIER_TIMEOUT);
 #endif
     klnk_mutex_lock(pres);
-    ret = vres_rpc_get(pres, addr, inlen, outlen, parg);
+    ret = klnk_rpc_get(pres, addr, inlen, outlen, parg);
     if (ret) {
         if (-EAGAIN == ret)
             goto wait;
         else
             goto out;
     } else {
-        ret = vres_rpc(parg);
-        if (ret) {
-            log_resource_err(pres, "rpc failed, ret=%s", log_get_err(ret));
+        ret = klnk_rpc(parg);
+        if (ret)
             goto out;
-        }
     }
 wait:
-    ret = vres_rpc_wait(parg);
-    vres_rpc_put(parg);
+    ret = klnk_rpc_wait(parg);
+    klnk_rpc_put(parg);
 out:
     klnk_mutex_unlock(pres);
     if (!vres_can_expose(pres))

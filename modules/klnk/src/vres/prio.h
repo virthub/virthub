@@ -18,7 +18,7 @@
 #define VRES_PRIO_NR_REPEATS      32
 #define VRES_PRIO_NR_INTERVALS    256
 #define VRES_PRIO_PERIOD          100000   // usec
-#define VRES_PRIO_SYNC_INTERVAL   1000000 // usec
+#define VRES_PRIO_SYNC_INTERVAL   10000000 // usec
 #ifdef VRES_PRIO_VIRTUAL_MEMBER
 #define VRES_PRIO_MAX             VRES_MEMBER_MAX * 4
 #else

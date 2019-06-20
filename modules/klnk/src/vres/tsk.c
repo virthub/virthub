@@ -25,7 +25,7 @@ int vres_tsk_get(vres_t *resource, vres_id_t *id)
         ret = vres_create(tsk);
 #ifdef TSK_REALLOC
         if (ret) {
-            vres_unlock(tsk);
+            vres_unlock(tsk, NULL);
             if (ret == -EEXIST) {
                 if (curr < VRES_ID_MAX)
                     curr += 1;
@@ -59,7 +59,7 @@ int vres_tsk_get(vres_t *resource, vres_id_t *id)
         vres_file_close(filp);
     }
 out:
-    vres_unlock(tsk);
+    vres_unlock(tsk, NULL);
     return ret;
 }
 
@@ -153,7 +153,7 @@ int vres_tsk_put(vres_t *resource)
     if (!ret)
         log_tsk_put(resource);
 out:
-    vres_unlock(tsk);
+    vres_unlock(tsk, NULL);
     return ret;
 }
 
