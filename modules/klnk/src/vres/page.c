@@ -314,7 +314,6 @@ int vres_page_get_diff(vres_page_t *page, vres_version_t version, int *diff)
         interval = page->version - version;
     else
         return -EINVAL;
-
     if (0 == interval)
         memset(diff, 0, size);
     else if (interval <= VRES_PAGE_NR_VERSIONS)

@@ -713,6 +713,48 @@ int vres_prio_extract(vres_req_t *req, int *val, vres_time_t *live)
 #endif
 
 
+int vres_prio_monitor(vres_req_t *req)
+{
+    int ret;
+    vres_index_t start;
+    vres_index_t index;
+    char path[VRES_PATH_MAX];
+    vres_t *resource = &req->resource;
+
+    vres_get_path(resource, path);
+    ret = vres_record_save(path, req, &index);
+    if (ret) {
+        log_resource_err(resource, "failed to save record");
+        return ret;
+    }
+    if (!vres_record_head(path, &start)) {
+        if (start == index) {
+            vres_t *arg;
+            pthread_t tid;
+            pthread_attr_t attr;
+
+            arg = (vres_t *)malloc(sizeof(vres_t));
+            if (!arg) {
+                log_resource_err(resource, "no memory");
+                return -ENOMEM;
+            }
+            memcpy(arg, resource, sizeof(vres_t));
+            pthread_attr_init(&attr);
+            pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+            pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM);
+            ret = pthread_create(&tid, &attr, vres_prio_select, arg);
+            pthread_attr_destroy(&attr);
+            if (ret) {
+                log_resource_err(resource, "failed to create thread");
+                free(arg);
+                return ret;
+            }
+        }
+    }
+    return 0;
+}
+
+
 int vres_prio_check(vres_req_t *req, int flags)
 {
     int ret;
@@ -747,41 +789,9 @@ int vres_prio_check(vres_req_t *req, int flags)
     } else
         goto out;
     if (!(flags & VRES_PRIO)) {
-        vres_index_t start;
-        vres_index_t index;
-        char path[VRES_PATH_MAX];
-
-        vres_get_path(resource, path);
-        ret = vres_record_save(path, req, &index);
-        if (ret) {
-            log_resource_err(resource, "failed to save record");
+        ret = vres_prio_monitor(req);
+        if (ret)
             goto out;
-        }
-        if (!vres_record_head(path, &start)) {
-            if (start == index) {
-                vres_t *arg;
-                pthread_t tid;
-                pthread_attr_t attr;
-
-                arg = (vres_t *)malloc(sizeof(vres_t));
-                if (!arg) {
-                    log_resource_err(resource, "no memory");
-                    ret = -ENOMEM;
-                    goto out;
-                }
-                memcpy(arg, resource, sizeof(vres_t));
-                pthread_attr_init(&attr);
-                pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-                pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM);
-                ret = pthread_create(&tid, &attr, vres_prio_select, arg);
-                pthread_attr_destroy(&attr);
-                if (ret) {
-                    log_resource_err(resource, "failed to create thread");
-                    free(arg);
-                    goto out;
-                }
-            }
-        }
     }
     vres_prio_unlock(resource);
     log_prio_check(resource, ">> finished << (need to retry)");

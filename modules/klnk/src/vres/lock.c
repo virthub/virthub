@@ -38,7 +38,7 @@ static inline unsigned long vres_lock_hash(vres_lock_desc_t *desc)
 {
     vres_lock_entry_t *ent = desc->entry;
 
-    assert(VRES_LOCK_ENTRY_SIZE);
+    assert(VRES_LOCK_ENTRY_SIZE == 4);
     return (ent[0] ^ ent[1] ^ ent[2] ^ ent[3]) % VRES_LOCK_GROUP_SIZE;
 }
 

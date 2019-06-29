@@ -16,7 +16,7 @@ int vres_tsk_get(vres_t *resource, vres_id_t *id)
     vres_id_t curr = resource->key;
     vres_t *tsk = &res;
 
-#if MANAGER_TYPE == NO_MANAGER
+#if MANAGER_TYPE == AREA_MANAGER
     assert(resource->key >= TSK_ID_START);
 #endif
     assert((vres_get_id(resource) == resource->owner) && (resource->key == resource->owner));

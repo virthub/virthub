@@ -14,12 +14,12 @@
 #define ENABLE_PRIORITY
 #define ENABLE_LIVE_TIME
 #define ENABLE_TIME_SYNC
-#define ENABLE_FAST_REPLY
 #define ENABLE_DYNAMIC_OWNER
 
 // #define ENABLE_PGSAVE
 // #define ENABLE_TSKPUT
 // #define ENABLE_BARRIER
+// #define ENABLE_FAST_REPLY
 
 #ifdef SHOW_KLNK
 #define LOG_KLNK_OPEN

@@ -49,6 +49,8 @@ int vres_dmgr_get_peers(vres_t *resource, vres_page_t *page, vres_peers_t *peers
             return -EINVAL;
         }
     }
+    if (flags & VRES_RDWR)
+        vres_pg_mkcand(page);
     return 0;
 }
 
@@ -115,19 +117,6 @@ int vres_dmgr_forward(vres_page_t *page, vres_req_t *req)
 }
 
 
-int vres_dmgr_update_owner(vres_page_t *page, vres_req_t *req)
-{
-    vres_t *resource = &req->resource;
-    int flags = vres_get_flags(resource);
-
-    if (flags & VRES_CHOWN) {
-        page->owner = vres_get_id(resource);
-        log_dmgr_update_owner(resource, "new_owner=%d", vres_get_id(resource));
-    }
-    return 0;
-}
-
-
 bool vres_dmgr_check_sched(vres_t *resource, vres_page_t *page)
 {
     int flags = vres_get_flags(resource);
@@ -139,6 +128,18 @@ bool vres_dmgr_check_sched(vres_t *resource, vres_page_t *page)
 }
 
 
+int vres_dmgr_update_owner(vres_t *resource, vres_page_t *page)
+{
+    int flags = vres_get_flags(resource);
+
+    if (flags & VRES_RDWR) {
+        page->owner = vres_get_id(resource);
+        log_dmgr_update_owner(resource, ">> owner=%d <<", vres_get_id(resource));
+    }
+    return 0;
+}
+
+
 int vres_dmgr_change_owner(vres_page_t *page, vres_req_t *req)
 {
     vres_t *resource = &req->resource;
@@ -146,7 +147,13 @@ int vres_dmgr_change_owner(vres_page_t *page, vres_req_t *req)
 
     if (flags & VRES_RDWR) {
         vres_set_flags(resource, VRES_CHOWN);
-        log_dmgr_change_owner(resource, "new_owner=%d", vres_get_id(resource));
+        log_dmgr_change_owner(resource, ">> owner=%d <<", vres_get_id(resource));
     }
     return 0;
+}
+
+
+bool vres_dmgr_page_own(vres_page_t *page)
+{
+    return vres_pg_cand(page);
 }

@@ -15,7 +15,7 @@
 #include <netinet/in.h>
 #include <defaults.h>
 
-#define NO_MANAGER       0
+#define AREA_MANAGER     0
 #define STATIC_MANAGER   1
 #define DYNAMIC_MANAGER  2
 

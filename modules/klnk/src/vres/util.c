@@ -22,7 +22,6 @@ void vres_sleep(vres_time_t timeout)
 
     if (timeout <= 0)
         return;
-
     pthread_mutex_init(&mutex, NULL);
     pthread_cond_init(&cond, NULL);
     vres_set_timeout(&time, timeout);

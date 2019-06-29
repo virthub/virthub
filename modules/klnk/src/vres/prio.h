@@ -74,6 +74,7 @@ typedef struct {
 } vres_prio_lock_t;
 
 void vres_prio_init();
+int vres_prio_monitor(vres_req_t *req);
 int vres_prio_set_idle(vres_t *resource);
 int vres_prio_set_busy(vres_t *resource);
 int vres_prio_sync_time(vres_t *resource);

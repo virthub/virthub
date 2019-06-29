@@ -31,7 +31,7 @@
 
 #define VRES_PAGE_NR_VERSIONS     16
 #define VRES_PAGE_NR_CANDIDATES   16
-#define VRES_PAGE_NR_HOLDERS      8
+#define VRES_PAGE_NR_HOLDERS      4
 #define VRES_PAGE_NR_HITS         4
 
 #define VRES_PAGE_CHECK_INTERVAL  1000 // usec

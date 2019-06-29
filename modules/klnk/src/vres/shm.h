@@ -19,7 +19,7 @@
 #include "tsk.h"
 
 #define VRES_SHM_CHECK_INTERVAL      2000 // usec
-#define VRES_SHM_NR_PEERS            (VRES_PAGE_NR_HOLDERS / 2)
+#define VRES_SHM_NR_PEERS            VRES_PAGE_NR_HOLDERS
 
 #define VRES_SHMMAX                  0x2000000                                         /* max shared seg size (bytes) */
 #define VRES_SHMMIN                  1                                                 /* min shared seg size (bytes) */
@@ -49,6 +49,7 @@
 #define LOG_SHM_HANDLE_ZEROPAGE
 #define LOG_SHM_NOTIFY_PROPOSER
 #define LOG_SHM_REQUEST_HOLDERS
+#define LOG_SHM_CHECK_FAST_REPLY
 #define LOG_SHM_CHECK_ACTIVE_OWNER
 #define LOG_SHM_CHECK_ACTIVE_HOLDER
 #define LOG_SHM_REQUEST_SILENT_HOLERS
@@ -60,7 +61,6 @@
 #define LOG_SHM_CHECK_ARGS
 #define LOG_SHM_SAVE_UPDATES
 #define LOG_SHM_CLOCK_UPDATE
-#define LOG_SHM_CHECK_FAST_REPLY
 #endif
 #endif
 

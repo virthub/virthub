@@ -89,7 +89,7 @@ char flg_list[FLG_MAX][32] = {
     "wait",     // WAIT           (0x00040000)
     "update",   // UPDATE         (0x00080000)
     "excl",     // EXCLUSIVE      (0x00100000)
-    "curr",     // CURRENT        (0x00200000)
+    "cmpl",     // COMPLETE       (0x00200000)
     "save"};    // SAVE           (0x00400000)
 
 char eok[32]      = "EOK";
