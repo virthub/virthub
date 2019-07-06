@@ -31,7 +31,6 @@ ARGS = {
     'show_ckpt': {'type': 'bool'},
     'show_proc': {'type': 'bool'},
     'show_page': {'type': 'bool'},
-    'show_line': {'type': 'bool'},
     'show_lock': {'type': 'bool'},
     'show_redo': {'type': 'bool'},
     'show_prio': {'type': 'bool'},

@@ -43,7 +43,6 @@
 #ifdef SHOW_MORE
 #define LOG_PAGE_GET
 #define LOG_PAGE_PUT
-#define LOG_PAGE_DIFF
 #endif
 #endif
 

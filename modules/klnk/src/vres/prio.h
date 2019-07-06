@@ -8,8 +8,8 @@
 #include "rwlock.h"
 #include "resource.h"
 
-// #define VRES_PRIO_NOWAIT
-// #define VRES_PRIO_VIRTUAL_MEMBER
+#define VRES_PRIO_INIT_TIME
+// #define VRES_PRIO_MAP_MEMBER
 
 #define VRES_PRIO_LOCK_GROUP_SIZE 256
 #define VRES_PRIO_LOCK_ENTRY_SIZE 3
@@ -19,7 +19,7 @@
 #define VRES_PRIO_NR_INTERVALS    256
 #define VRES_PRIO_PERIOD          100000   // usec
 #define VRES_PRIO_SYNC_INTERVAL   10000000 // usec
-#ifdef VRES_PRIO_VIRTUAL_MEMBER
+#ifdef VRES_PRIO_MAP_MEMBER
 #define VRES_PRIO_MAX             VRES_MEMBER_MAX * 4
 #else
 #define VRES_PRIO_MAX             VRES_MEMBER_MAX

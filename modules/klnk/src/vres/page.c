@@ -490,6 +490,7 @@ static int vres_page_rdprotect(vres_t *resource, vres_page_t *page, int pid)
 {
     int ret = 0;
     char *buf = NULL;
+    vres_key_t key = resource->key;
 
     if (!vres_pg_active(page) || !vres_pg_access(page))
         return 0;
@@ -502,7 +503,7 @@ static int vres_page_rdprotect(vres_t *resource, vres_page_t *page, int pid)
             return -ENOMEM;
         }
     }
-    ret = sys_shm_rdprotect(resource->key, pid, vres_get_off(resource), buf);
+    ret = sys_shm_rdprotect(key, pid, vres_get_off(resource), buf);
     if (ret) {
         if (ENOENT == errno) {
             ret = 0;

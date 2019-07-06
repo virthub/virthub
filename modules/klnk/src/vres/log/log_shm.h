@@ -3,6 +3,9 @@
 
 #include "log.h"
 
+#define LOG_SHM_NR_BITS  32
+#define LOG_SHM_NR_BYTES 16
+
 #define log_shm_page(page, str) \
         log_str(str, ", page={hid:%d, cnt:%d, clk:%lld, ver:%lld, hld:%d, own:%d, flg:%s}", \
         page->hid, page->count, page->clk, page->version, page->nr_holders, page->owner, log_get_flags(page->flags)) \
@@ -83,7 +86,7 @@
 #endif
 
 #ifdef LOG_SHM_CHECK_ACTIVE_HOLDER
-#define log_shm_check_active_holder(page, req, nr_lines, total) do { \
+#define log_shm_check_active_holder(page, req, lines, nr_lines, total) do { \
     char tmp[LOG_STR_LEN] = {0}; \
     vres_t *resource = &(req)->resource; \
     vres_shmfault_arg_t *arg = (vres_shmfault_arg_t *)(req->buf); \
@@ -91,6 +94,7 @@
     log_shm_page(page, tmp); \
     log_shm_arg(arg, tmp); \
     log_ln("%s, nr_lines=%d (total=%d)", tmp, nr_lines, total); \
+    log_shm_lines(resource, page, lines, nr_lines, total); \
 } while (0)
 #else
 #define log_shm_check_active_holder(...) do {} while (0)
@@ -200,11 +204,12 @@
 #endif
 
 #ifdef LOG_SHM_SAVE_REQ
-#define log_shm_save_req(req) do { \
+#define log_shm_save_req(page, req) do { \
     char tmp[LOG_STR_LEN] = {0}; \
     vres_t *resource = &(req)->resource; \
     vres_shmfault_arg_t *arg = (vres_shmfault_arg_t *)(req->buf); \
     log_resource_str(resource, tmp); \
+    log_shm_page(page, tmp); \
     log_shm_arg(arg, tmp); \
     log_ln("%s", tmp); \
 } while (0)
@@ -219,9 +224,11 @@
 #endif
 
 #ifdef LOG_SHM_DELIVER
-#define log_shm_deliver(req) do { \
+#define log_shm_deliver(page, req) do { \
+    vres_t *resource = &(req)->resource; \
     vres_shmfault_arg_t *arg = (vres_shmfault_arg_t *)req->buf; \
-    log_resource_info(&req->resource, ">-- deliver --< <idx:%d>", arg->index); \
+    log_resource_info(resource, ">-- deliver --< <idx:%d>", arg->index); \
+    log_shm_lines(resource, page, NULL, 0, 0); \
 } while (0)
 #else
 #define log_shm_deliver(...) do {} while (0)
@@ -263,7 +270,7 @@
     if (dest) \
         log_resource_info(resource, "dest=%d", *dest); \
     else \
-        log_resource_info(resource, "dest=NULL"); \
+        log_resource_info(resource, "dest=None"); \
 } while (0)
 #else
 #define log_shm_request_owner(...) do {} while (0)
@@ -327,6 +334,85 @@
 } while (0)
 #else
 #define log_check_fast_reply(...) do {} while (0)
+#endif
+
+#ifdef LOG_SHM_LINE_NUM
+#define log_shm_line_num(resource, lines, nr_lines, str) do { \
+    if (nr_lines > 0) { \
+        int i; \
+        vres_line_t *p = lines; \
+        if (p) { \
+            log_str(str, ", lines=["); \
+            for (i = 0; i < nr_lines - 1; i++) \
+                log_str(str, "%d, ", p[i].num); \
+            log_str(str, "%d]", p[i].num); \
+        } \
+    } \
+} while (0)
+#else
+#define log_shm_line_num(...) do {} while (0)
+#endif
+
+#ifdef LOG_SHM_PAGE_CONTENT
+#define log_shm_page_content(page) do { \
+    int i, j; \
+    int cnt = 0; \
+    char *p; \
+    char tmp[LOG_STR_LEN] = {0}; \
+    log_str(tmp, "----- partial page content ----- (%s)\n", __func__); \
+    p = tmp + strlen(tmp); \
+    for (i = 0; i < LOG_SHM_NR_BYTES; i++) { \
+        char ch = page->buf[i]; \
+        for (j = 0; j < 8; j++) { \
+            if (ch & 1) \
+                *p++ = '1'; \
+            else \
+                *p++ = '0'; \
+            ch >>= 1; \
+        } \
+        cnt += 8; \
+        if (cnt >= LOG_SHM_NR_BITS) { \
+            *p++ = '\n'; \
+            cnt = 0; \
+        } \
+    } \
+    *p = '\0'; \
+    log_str(tmp, "--------------------------------"); \
+    log_ln("%s", tmp); \
+} while (0)
+#else
+#define log_shm_page_content(...) do {} while (0)
+#endif
+
+#ifdef LOG_SHM_LINES
+#define log_shm_lines(resource, page, lines, nr_lines, total) do { \
+    char tmp[LOG_STR_LEN] = {0}; \
+    if (nr_lines > 0) { \
+        log_resource_str(resource, tmp); \
+        log_str(tmp, ", line_info={new:%d, total:%d}", nr_lines, total); \
+        log_shm_line_num(resource, lines, nr_lines, tmp); \
+        log_ln("%s", tmp); \
+    } \
+    log_shm_page_content(page); \
+} while (0)
+#else
+#define log_shm_lines(...) do {} while (0)
+#endif
+
+#ifdef LOG_SHM_PAGE_DIFF
+#define log_shm_page_diff(diff) do { \
+    int i, j; \
+    char tmp[LOG_STR_LEN] = {0}; \
+    log_str(tmp, "page diff: (%s)\n", __func__); \
+    for (i = 0; i < VRES_PAGE_NR_VERSIONS; i++) { \
+        for (j = 0; j < VRES_LINE_MAX; j++) \
+            log_str(tmp, "%d", diff[i][j]); \
+        log_str(tmp, "\n"); \
+    } \
+    log("%s", tmp); \
+} while (0)
+#else
+#define log_shm_page_diff(...) do {} while (0)
 #endif
 
 #endif

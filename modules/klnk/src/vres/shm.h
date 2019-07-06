@@ -18,7 +18,8 @@
 #include "line.h"
 #include "tsk.h"
 
-#define VRES_SHM_CHECK_INTERVAL      2000 // usec
+#define VRES_SHM_CHECK_INTV          2000 // usec
+#define VRES_SHM_WRITE_INTV          5000 // usec
 #define VRES_SHM_NR_PEERS            VRES_PAGE_NR_HOLDERS
 
 #define VRES_SHMMAX                  0x2000000                                         /* max shared seg size (bytes) */
@@ -31,16 +32,18 @@
 #define VRES_SHM_NR_VISITS           2
 
 #ifdef SHOW_SHM
+#define LOG_SHM_LINES
 #define LOG_SHM_OWNER
 #define LOG_SHM_DESTORY
 #define LOG_SHM_DELIVER
+#define LOG_SHM_LINE_NUM
 #define LOG_SHM_SAVE_REQ
 #define LOG_SHM_GET_ARGS
-#define LOG_SHM_SAVE_PAGE
 #define LOG_SHM_FAST_REPLY
 #define LOG_SHM_CHECK_REPLY
 #define LOG_SHM_CHECK_OWNER
 #define LOG_SHM_EXPIRED_REQ
+#define LOG_SHM_PAGE_CONTENT
 #define LOG_SHM_CHECK_HOLDER
 #define LOG_SHM_NOTIFY_OWNER
 #define LOG_SHM_REQUEST_OWNER
@@ -58,6 +61,8 @@
 #define LOG_SHM_CACHE
 #define LOG_SHM_WAKEUP
 #define LOG_SHM_BYPASS
+#define LOG_SHM_SAVE_PAGE
+#define LOG_SHM_PAGE_DIFF
 #define LOG_SHM_CHECK_ARGS
 #define LOG_SHM_SAVE_UPDATES
 #define LOG_SHM_CLOCK_UPDATE

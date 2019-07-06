@@ -105,6 +105,7 @@ enum vres_operation {
 #define VRES_BUF_MAX     ((1 << 16) - 1)
 #define VRES_INDEX_MAX   ((1 << 30) - 1)
 #define VRES_MANAGER_MAX 16
+#define VRES_REPLY_MAX   8192 
 
 typedef key_t vres_key_t;
 typedef int32_t vres_id_t;

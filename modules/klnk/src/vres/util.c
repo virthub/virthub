@@ -16,18 +16,18 @@ vres_addr_t *vres_managers = NULL;
 
 void vres_sleep(vres_time_t timeout)
 {
-    pthread_cond_t cond;
-    struct timespec time;
-    pthread_mutex_t mutex;
+    if (timeout > 0) {
+        pthread_cond_t cond;
+        struct timespec time;
+        pthread_mutex_t mutex;
 
-    if (timeout <= 0)
-        return;
-    pthread_mutex_init(&mutex, NULL);
-    pthread_cond_init(&cond, NULL);
-    vres_set_timeout(&time, timeout);
-    pthread_mutex_lock(&mutex);
-    pthread_cond_timedwait(&cond, &mutex, &time);
-    pthread_mutex_unlock(&mutex);
+        pthread_mutex_init(&mutex, NULL);
+        pthread_cond_init(&cond, NULL);
+        vres_set_timeout(&time, timeout);
+        pthread_mutex_lock(&mutex);
+        pthread_cond_timedwait(&cond, &mutex, &time);
+        pthread_mutex_unlock(&mutex);
+    }
 }
 
 
@@ -254,10 +254,17 @@ vres_reply_t *vres_reply_err(int err)
 
 vres_reply_t *vres_reply_alloc(size_t size)
 {
-    vres_reply_t *reply = (vres_reply_t *)calloc(1, sizeof(vres_reply_t) + size);
+    vres_reply_t *reply = NULL;
+    size_t sz = sizeof(vres_reply_t) + size;
 
-    if (reply)
-        reply->length = size;
+    if (sz <= VRES_REPLY_MAX) {
+        reply = (vres_reply_t *)malloc(sz);
+        if (reply) {
+            memset(reply, 0, sz);
+            reply->length = size;
+        }
+    } else
+        log_err("failed to generate reply, invalid size, size=%zu", size);
     return reply;
 }
 

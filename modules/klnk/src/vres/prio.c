@@ -241,17 +241,19 @@ int vres_prio_create(vres_t *resource, bool sync)
     int ret;
     vres_time_t off = 0;
 
+#ifdef VRES_PRIO_INIT_TIME
     if (sync) {
         vres_time_t time;
         vres_time_t start = vres_get_time();
 
         ret = vres_sync_request(resource, &time);
         if (ret) {
-            log_resource_err(resource, "failed to sync");
+            log_resource_err(resource, "failed to get time");
             return ret;
         }
         off = vres_get_time_offset(start, time);
     }
+#endif
     ret = vres_prio_do_create(resource, off);
     if (ret) {
         log_resource_err(resource, "failed to create");
@@ -295,7 +297,7 @@ static int vres_prio_get_waittime(vres_t *resource, vres_time_t *waittime)
 
 static int vres_prio_convert_from_time(vres_t *resource, vres_id_t id, vres_time_t time)
 {
-#ifdef VRES_PRIO_VIRTUAL_MEMBER
+#ifdef VRES_PRIO_MAP_MEMBER
     int pos = id % VRES_PRIO_MAX;
 #else
     int pos = vres_member_get_pos(resource, id);
@@ -558,7 +560,7 @@ void *vres_prio_select(void *arg)
             vres_id_t select = 0;
             vres_record_t record;
             vres_index_t pos = index;
-#if !defined(ENABLE_LIVE_TIME) && !defined(VRES_PRIO_NOWAIT)
+#ifndef ENABLE_LIVE_TIME
             int curr = -1;
             int val;
 #endif
@@ -580,7 +582,7 @@ void *vres_prio_select(void *arg)
                 } else
                     break;
             }
-#if !defined(ENABLE_LIVE_TIME) && !defined(VRES_PRIO_NOWAIT)
+#ifndef ENABLE_LIVE_TIME
             if (!ret) {
                 ret = vres_prio_get_time(resource, &time);
                 if (!ret) {
@@ -669,7 +671,7 @@ void *vres_prio_select(void *arg)
                     vres_record_put(&record);
                     if (remove) {
                         vres_record_remove(path, pos);
-#if !defined(ENABLE_LIVE_TIME) && !defined(VRES_PRIO_NOWAIT)
+#ifndef ENABLE_LIVE_TIME
                         ret = vres_prio_get(resource, &prio);
                         if (ret) {
                             log_resource_err(resource, "failed to get priority");

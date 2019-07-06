@@ -111,7 +111,7 @@ int vres_dmgr_forward(vres_page_t *page, vres_req_t *req)
         log_dmgr_forward(resource, "forward to *%d*", page->owner);
         return ret;
     } else {
-        log_dmgr_forward(resource, "*cannot forward* (no owner)");
+        log_dmgr_forward(resource, "*cannot* forward (no owner)");
         return -EAGAIN;
     }
 }
