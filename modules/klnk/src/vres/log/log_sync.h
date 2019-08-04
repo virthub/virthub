@@ -9,4 +9,10 @@
 #define log_join(...) do {} while (0)
 #endif
 
+#ifdef LOG_SYNC
+#define log_sync(resource, reply) log_resource_info(resource,  "ret=%s", log_get_err(vres_get_errno(reply)))
+#else
+#define log_sync(...) do {} while (0)
+#endif
+
 #endif

@@ -63,6 +63,7 @@
         log_err("(owner=%d, cls=%s, key=%d, src=%d, off=%lu), " fmt, (resource)->owner, log_get_cls((resource)->cls), (resource)->key, vres_get_id(resource), (unsigned long)vres_get_off(resource), ##__VA_ARGS__); \
     else \
         log_err("(owner=%d, cls=%s, key=%d, src=%d), " fmt, (resource)->owner, log_get_cls((resource)->cls), (resource)->key, vres_get_id(resource), ##__VA_ARGS__); \
+    assert(0); \
 } while (0)
 #else
 #define log_err(...) do {} while (0)

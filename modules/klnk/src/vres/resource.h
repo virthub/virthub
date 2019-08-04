@@ -39,8 +39,8 @@
 
 bool vres_has_task(vres_id_t id);
 int vres_flush(vres_t *resource);
-int vres_create(vres_t *resource);
 int vres_remove(vres_t *resource);
+bool vres_create(vres_t *resource);
 int vres_destroy(vres_t *resource);
 bool vres_exists(vres_t *resource);
 bool vres_is_owner(vres_t *resource);

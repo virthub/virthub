@@ -165,18 +165,18 @@ void vres_get_desc(vres_t *resource, vres_desc_t *desc)
 }
 
 
-int vres_create(vres_t *resource)
+bool vres_create(vres_t *resource)
 {
-    int ret;
     vres_desc_t desc;
     char path[VRES_PATH_MAX] = {0};
 
     vres_get_desc(resource, &desc);
     vres_get_key_path(resource, path);
-    ret = vres_metadata_create(path, (char *)&desc, sizeof(vres_desc_t));
-    if (!ret)
-        ret = vres_cache_write(resource, (char *)&desc, sizeof(vres_desc_t));
-    return ret;
+    if (vres_metadata_create(path, (char *)&desc, sizeof(vres_desc_t))) {
+        vres_cache_write(resource, (char *)&desc, sizeof(vres_desc_t));
+        return true;
+    } else
+        return false;
 }
 
 

@@ -100,7 +100,7 @@ reply:
             klnk_send(desc, (void *)&ret, sizeof(int));
         klnk_close(desc);
     }
-    log_klnk_handler(resource, ">-- handler (end, ret=%s) --<", log_get_err(ret));
+    log_klnk_handler(resource, ">-- handler (end) --<");
     free(req);
     if (rep)
         free(rep);

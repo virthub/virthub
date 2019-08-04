@@ -8,3 +8,7 @@
 - Fix a bug of creating resource in KLNK.
 - Improve the member management of resources in KLNK.
 - Provide static/dynamic manager support for KLNK.
+
+## [0.0.3]
+- Fix memory protection issues
+- Provide lazy page check support

@@ -113,14 +113,13 @@ vres_reply_t *vres_proc(vres_req_t *req, int flags)
     vres_reply_t *reply = NULL;
     vres_t *resource = &req->resource;
     vres_op_t op = vres_get_op(resource);
-    vres_cls_t cls = resource->cls;
 
-    log_proc(req, "start ...");
+    log_proc(req, NULL, true);
     trace_proc(req);
     if (vres_is_sync(op))
         reply = vres_proc_sync(req, flags);
     else {
-        switch(cls) {
+        switch(resource->cls) {
         case VRES_CLS_MSG:
             reply = vres_proc_msg(req, flags);
             break;
@@ -134,11 +133,11 @@ vres_reply_t *vres_proc(vres_req_t *req, int flags)
             reply = vres_proc_tsk(req, flags);
             break;
         default:
-            log_resource_err(resource, "invalid class, cls=%d", cls);
+            log_resource_err(resource, "invalid class");
             break;
         }
     }
-    log_proc(req, ">> finished <<");
+    log_proc(req, reply, false);
     return reply;
 }
 

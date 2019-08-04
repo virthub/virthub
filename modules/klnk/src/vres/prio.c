@@ -510,10 +510,8 @@ int vres_prio_set_idle(vres_t *resource)
         vres_id_t id = vres_get_id(resource);
 
         prio = vres_file_get_desc(entry, vres_prio_t);
-        if (!vres_prio_is_expired(prio) && (id == prio->id)) {
-            prio->id = id;
+        if (!vres_prio_is_expired(prio) && (id == prio->id))
             prio->t_update = vres_get_time();
-        }
         vres_file_put_entry(entry);
     }
     vres_prio_unlock(resource);
@@ -643,7 +641,7 @@ void *vres_prio_select(void *arg)
                             if (lock) {
                                 ret = vres_lock_buttom(lock);
                                 if (!ret)
-                                    reply = vres_proc(req, VRES_REDO | VRES_PRIO);
+                                    reply = vres_proc(req, VRES_PRIO);
                                 else
                                     log_resource_err(resource, "failed to lock");
                                 vres_unlock(pres, lock);
@@ -652,7 +650,7 @@ void *vres_prio_select(void *arg)
                                 ret = -ENOENT;
                             }
                         } else
-                            reply = vres_proc(req, VRES_REDO | VRES_PRIO);
+                            reply = vres_proc(req, VRES_PRIO);
                         vres_prio_lock(resource);
                         if (!ret) {
                             if (reply && vres_has_err(reply)) {
@@ -683,6 +681,8 @@ void *vres_prio_select(void *arg)
                     }
                 } while (!vres_record_next(path, &pos));
             }
+            if (!ret)
+                has_rec = !vres_record_head(path, &index);
         }
         vres_prio_unlock(resource);
     } while (has_rec && !ret);
@@ -788,23 +788,23 @@ int vres_prio_check(vres_req_t *req, int flags)
         if (vres_prio_compare(resource, vres_get_id(resource), prio.id) >= 0)
             goto out;
 #endif
-    } else
+    } else {
+#ifdef ENABLE_LIVE_TIME
+        ret = vres_prio_update(resource, val, live);
+#endif
         goto out;
+    }
     if (!(flags & VRES_PRIO)) {
         ret = vres_prio_monitor(req);
         if (ret)
             goto out;
     }
     vres_prio_unlock(resource);
-    log_prio_check(resource, ">> finished << (need to retry)");
+    log_prio_check(resource, ">> finished (retry) <<");
     return -EAGAIN;
 out:
-#ifdef ENABLE_LIVE_TIME
-    if (!ret)
-        ret = vres_prio_update(resource, val, live);
-#endif
     vres_prio_unlock(resource);
-    log_prio_check(resource, ">> finished <<");
+    log_prio_check(resource, ">> finished (ret=%s) <<", log_get_err(ret));
     return ret;
 }
 
@@ -822,7 +822,7 @@ int vres_prio_sync_time(vres_t *resource)
         goto out;
     }
     start = vres_get_time();
-    if (start - prio.t_sync > VRES_PRIO_SYNC_INTERVAL) {
+    if (start - prio.t_sync > VRES_PRIO_SYNC_INTV) {
         vres_time_t time;
 
         ret = vres_sync_request(resource, &time);

@@ -40,7 +40,7 @@ int vres_redo(vres_t *resource, int flags)
     char path[VRES_PATH_MAX];
 
     vres_get_record_path(resource, path);
-    log_redo(resource, "*start*");
+    log_redo(resource, "start ...");
     ret = vres_record_head(path, &index);
     while (!ret) {
         ret = vres_record_get(path, index, &record);
@@ -95,7 +95,6 @@ int vres_redo_all(vres_t *resource, int flags)
         }
         pend[0] = '\0';
     }
-
     log_redo_all(resource, ">> finished <<");
     return 0;
 }

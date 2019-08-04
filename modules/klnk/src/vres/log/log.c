@@ -14,7 +14,7 @@
 #include <stdbool.h>
 
 #define OP_MAX      64
-#define FLG_MAX     23
+#define FLG_MAX     24
 #define OP_LEN      32
 #define CMD_LEN     32
 #define SHM_CMD_MAX 7
@@ -90,7 +90,9 @@ char flg_list[FLG_MAX][32] = {
     "update",   // UPDATE         (0x00080000)
     "excl",     // EXCLUSIVE      (0x00100000)
     "cmpl",     // COMPLETE       (0x00200000)
-    "save"};    // SAVE           (0x00400000)
+    "save",     // SAVE           (0x00400000)
+    "present"   // PRESENT        (0x00800000)
+};
 
 char eok[32]      = "EOK";
 char eio[32]      = "EIO";
@@ -129,32 +131,30 @@ char *log_get_err(int err)
     char *p = NULL;
     static int cnt = 0;
 
-    if (val < 0)
-        val = -val;
     switch (val) {
-    case EOK:
+    case -EOK:
         return eok;
-    case EIO:
+    case -EIO:
         return eio;
-    case ERMID:
+    case -ERMID:
         return ermid;
-    case EPERM:
+    case -EPERM:
         return eperm;
-    case EEXIST:
+    case -EEXIST:
         return eexist;
-    case EINVAL:
+    case -EINVAL:
         return einval;
-    case ENOENT:
+    case -ENOENT:
         return enoent;
-    case EFAULT:
+    case -EFAULT:
         return efault;
-    case ENOMEM:
+    case -ENOMEM:
         return enomem;
-    case EAGAIN:
+    case -EAGAIN:
         return eagain;
-    case EACCES:
+    case -EACCES:
         return eacces;
-    case ENOOWNER:
+    case -ENOOWNER:
         return enoowner;
     default:
         p = errnum[cnt++];

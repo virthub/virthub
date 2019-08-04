@@ -88,7 +88,6 @@ static inline int klnk_create()
 
 int klnk_create_manager(vres_id_t id)
 {
-    int ret;
     vres_t res;
     vres_t *pres = &res;
 
@@ -99,9 +98,8 @@ int klnk_create_manager(vres_id_t id)
     vres_set_id(pres, id);
     if (vres_exists(pres))
         vres_flush(pres);
-    ret = vres_create(pres);
-    if (ret)
-        return ret;
+    if (!vres_create(pres))
+        return -EEXIST;
     else
         return vres_mkdir(pres);
 }

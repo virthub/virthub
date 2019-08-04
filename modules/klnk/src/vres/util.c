@@ -35,9 +35,10 @@ int vres_get_errno(vres_reply_t *reply)
 {
     if (!reply)
         return 0;
-    if (vres_has_err(reply))
+    else if (vres_has_err(reply))
         return vres_get_err(reply);
-    return reply->length;
+    else
+        return reply->length;
 }
 
 
@@ -258,9 +259,9 @@ vres_reply_t *vres_reply_alloc(size_t size)
     size_t sz = sizeof(vres_reply_t) + size;
 
     if (sz <= VRES_REPLY_MAX) {
-        reply = (vres_reply_t *)malloc(sz);
+        reply = (vres_reply_t *)calloc(1, sz);
         if (reply) {
-            memset(reply, 0, sz);
+            assert(size > 0);
             reply->length = size;
         }
     } else

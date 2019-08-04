@@ -10,17 +10,25 @@
 #include <sched.h>
 #endif
 
-#define ENABLE_TTL
 #define ENABLE_PRIORITY
 #define ENABLE_LIVE_TIME
+#define ENABLE_WRITE_EXT
 #define ENABLE_DYNAMIC_OWNER
 
+// #define ENABLE_TTL
 // #define ENABLE_PGSAVE
 // #define ENABLE_TSKPUT
 // #define ENABLE_BARRIER
 // #define ENABLE_TIME_SYNC
 // #define ENABLE_FAST_REPLY
-// #define ENABLE_SAFE_WRITE
+// #define ENABLE_PAGE_PRESENT
+// #define ENABLE_LASY_PAGE_CHECK
+
+#if defined(ENABLE_LASY_PAGE_CHECK) || !defined(ENABLE_PAGE_PRESENT)
+#define PAGE_CHECK_MAX 256
+#else
+#define PAGE_CHECK_MAX 0
+#endif
 
 #ifdef SHOW_KLNK
 #define LOG_KLNK_OPEN

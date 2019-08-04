@@ -541,10 +541,48 @@ int vres_page_protect(vres_t *resource, vres_page_t *page)
         log_resource_err(resource, "failed to get pid (ret=%s)", log_get_err(ret));
         return -EINVAL;
     }
+#ifdef ENABLE_LASY_PAGE_CHECK
+    if (vres_pg_active(page)) {
+        ret = vres_page_check(resource, page, -1, VRES_RDONLY);
+        if (ret) {
+            log_resource_err(resource, "failed to check page");
+            return ret;
+        }
+    } else
+        return 0;
+#endif
     if (flags & VRES_RDONLY)
         return vres_page_wrprotect(resource, page, desc.id);
     else if (flags & VRES_RDWR)
         return vres_page_rdprotect(resource, page, desc.id);
     else
         return 0;
+}
+
+
+int vres_page_check(vres_t *resource, vres_page_t *page, int retry, int flags)
+{
+    int ret;
+    bool present;
+    int cnt = retry;
+    vres_desc_t desc;
+    vres_key_t key = resource->key;
+    unsigned long off = vres_get_off(resource);
+
+    if (!vres_pg_present(page)) {
+        ret = vres_get_peer(resource->owner, &desc);
+        if (ret) {
+            log_resource_err(resource, "failed to get pid (ret=%s)", log_get_err(ret));
+            return -EINVAL;
+        }
+        do {
+            vres_sleep(VRES_PAGE_CHECK_INTV);
+            present = sys_shm_present(key, desc.id, off, flags);
+            if (cnt >= 0)
+                cnt--;
+        } while (!present && (cnt != 0));
+        if (present)
+            vres_pg_mkpresent(page);
+    }
+    return 0;
 }

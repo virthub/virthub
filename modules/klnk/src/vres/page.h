@@ -10,6 +10,17 @@
 #include "line.h"
 #include "file.h"
 
+#define VRES_PAGE_NR_HITS         4
+#define VRES_PAGE_NR_HOLDERS      4
+#define VRES_PAGE_NR_VERSIONS     16
+#define VRES_PAGE_NR_CANDIDATES   16
+
+#define VRES_PAGE_CHECK_INTV      5000 // usec
+
+#define VRES_PAGE_DIFF_SIZE       ((VRES_PAGE_NR_VERSIONS * VRES_LINE_MAX + BITS_PER_BYTE - 1) / BITS_PER_BYTE)
+#define VRES_PAGE_LOCK_GROUP_SIZE 256
+#define VRES_PAGE_LOCK_ENTRY_SIZE 2
+
 #define VRES_PAGE_RDONLY          VRES_RDONLY
 #define VRES_PAGE_RDWR            VRES_RDWR
 #define VRES_PAGE_CREAT           VRES_CREAT
@@ -24,17 +35,7 @@
 #define VRES_PAGE_EXCL            0x00100000
 #define VRES_PAGE_CMPL            0x00200000
 #define VRES_PAGE_SAVE            0x00400000
-
-#define VRES_PAGE_DIFF_SIZE       ((VRES_PAGE_NR_VERSIONS * VRES_LINE_MAX + BITS_PER_BYTE - 1) / BITS_PER_BYTE)
-#define VRES_PAGE_LOCK_GROUP_SIZE 256
-#define VRES_PAGE_LOCK_ENTRY_SIZE 2
-
-#define VRES_PAGE_NR_VERSIONS     16
-#define VRES_PAGE_NR_CANDIDATES   16
-#define VRES_PAGE_NR_HOLDERS      4
-#define VRES_PAGE_NR_HITS         4
-
-#define VRES_PAGE_CHECK_INTERVAL  1000 // usec
+#define VRES_PAGE_PRESENT         0x00800000
 
 #ifdef SHOW_PAGE
 #define LOG_PAGE_LOCK
@@ -138,9 +139,14 @@ static inline void vres_pg_mkcmpl(vres_page_t *page)
     page->flags |= VRES_PAGE_CMPL;
 }
 
-static inline void vres_pg_mkpgsave(vres_page_t *page)
+static inline void vres_pg_mksave(vres_page_t *page)
 {
     page->flags |= VRES_PAGE_SAVE;
+}
+
+static inline void vres_pg_mkpresent(vres_page_t *page)
+{
+    page->flags |= VRES_PAGE_PRESENT;
 }
 
 static inline void vres_pg_clrready(vres_page_t *page)
@@ -183,9 +189,14 @@ static inline void vres_pg_clrcmpl(vres_page_t *page)
     page->flags &= ~VRES_PAGE_CMPL;
 }
 
-static inline void vres_pg_clrpgsave(vres_page_t *page)
+static inline void vres_pg_clrsave(vres_page_t *page)
 {
     page->flags &= ~VRES_PAGE_SAVE;
+}
+
+static inline void vres_pg_clrpresent(vres_page_t *page)
+{
+    page->flags &= ~VRES_PAGE_PRESENT;
 }
 
 static inline void vres_pg_rdprotect(vres_page_t *page)
@@ -255,9 +266,14 @@ static inline int vres_pg_cmpl(vres_page_t *page)
     return page->flags & VRES_PAGE_CMPL;
 }
 
-static inline int vres_pg_pgsave(vres_page_t *page)
+static inline int vres_pg_save(vres_page_t *page)
 {
     return page->flags & VRES_PAGE_SAVE;
+}
+
+static inline int vres_pg_present(vres_page_t *page)
+{
+    return page->flags & VRES_PAGE_PRESENT;
 }
 
 void vres_page_lock_init();
@@ -271,6 +287,7 @@ void *vres_page_get(vres_t *resource, vres_page_t **page, int flags);
 void vres_page_clear_holder_list(vres_t *resource, vres_page_t *page);
 int vres_page_add_holder(vres_t *resource, vres_page_t *page, vres_id_t id);
 int vres_page_get_diff(vres_page_t *page, vres_version_t version, int *diff);
+int vres_page_check(vres_t *resource, vres_page_t *page, int retry, int flags);
 int vres_page_search_holder_list(vres_t *resource, vres_page_t *page, vres_id_t id);
 int vres_page_update_holder_list(vres_t *resource, vres_page_t *page, vres_id_t *holders, int nr_holders);
 
