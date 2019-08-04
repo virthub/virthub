@@ -32,9 +32,15 @@ int klnk_io_get_output(klnk_desc_t desc, char *buf, size_t size)
 
 static void *klnk_io_create(void *buf)
 {
+    int ret;
     vres_arg_t *arg = (vres_arg_t *)buf;
+    vres_t *resource = &arg->resource;
 
-    klnk_io_sync(&arg->resource, arg->in, arg->inlen, arg->out, arg->outlen, arg->dest);
+    ret = klnk_io_sync(resource, arg->in, arg->inlen, arg->out, arg->outlen, arg->dest);
+    if (ret)
+        log_err("failed to send, ret=%s", log_get_err(ret));
+    log_klnk_io_create(resource, arg->dest);
+    pthread_exit(NULL);
     free(buf);
     return NULL;
 }
@@ -56,7 +62,7 @@ int klnk_io_sync(vres_t *resource, char *in, size_t inlen, char *out, size_t out
         log_err("invalid parameters");
         return -EINVAL;
     }
-    log_klnk_io_sync(resource, ">-- io_sync (begin) --<");
+    log_klnk_io_sync(resource, dest, "start ...");
 again:
     if (!dest) {
         ret = vres_lookup(resource, &peer);
@@ -81,11 +87,6 @@ again:
         req = (vres_req_t *)buf;
         req->resource = *resource;
         req->length = inlen;
-        ret = vres_get_peer(vres_get_id(resource), &req->src);
-        if (ret) {
-            log_err("failed to get peer %d (ret=%s)", vres_get_id(resource), log_get_err(ret));
-            goto release;
-        }
         if (inlen > 0)
             memcpy(req->buf, in, inlen);
     }
@@ -93,26 +94,26 @@ again:
         req->resource.owner = *dest;
     else
         req->resource.owner = peer.id;
-    log_klnk_io_sync_connect(resource, peer);
+    log_klnk_io_sync_connect(resource, peer, dest);
     desc = klnk_connect(peer.address, KLNK_PORT);
     if (desc < 0) {
-        log_err("failed to connect to %s (ret=%s)", vres_addr2str(peer.address), log_get_err(desc));
+        log_err("failed to connect to %s (ret=%s)", addr2str(peer.address), log_get_err(desc));
         ret = -EFAULT;
         goto retry;
     }
     log_klnk_io_sync_send(resource);
     ret = klnk_send(desc, buf, buflen);
     if (ret) {
-        log_err("failed to send to %s (ret=%s)", vres_addr2str(peer.address), log_get_err(ret));
+        log_err("failed to send to %s (ret=%s)", addr2str(peer.address), log_get_err(ret));
         goto retry;
     }
     log_klnk_io_sync_output(resource);
     ret = klnk_io_get_output(desc, out, outlen);
     if (-ENOOWNER == ret) {
         if (dest)
-            log_resource_err(resource, "no owner (dest=%d, owner=%d, addr=%s)", *dest, req->resource.owner, vres_addr2str(peer.address));
+            log_err("no owner (dest=%d, owner=%d, addr=%s)", *dest, req->resource.owner, addr2str(peer.address));
         else
-            log_resource_err(resource, "no owner (owner=%d, addr=%s)", req->resource.owner, vres_addr2str(peer.address));
+            log_err("no owner (owner=%d, addr=%s)", req->resource.owner, addr2str(peer.address));
         vres_cache_flush(resource);
         goto retry;
     }
@@ -121,7 +122,7 @@ again:
 release:
     if (req)
         free(req);
-    log_klnk_io_sync(resource, ">-- io_sync (end, ret=%s) --<", log_get_err(ret));
+    log_klnk_io_sync(resource, dest, ">> finished <<");
     return ret;
 retry:
     if (desc >= 0)
@@ -131,12 +132,11 @@ retry:
         goto again;
     } else {
         if (dest)
-            log_resource_err(resource, "failed to send (reaching the maximum retry attempts, dest=%d, owner=%d)", *dest, req->resource.owner);
+            log_err("failed to send (reaching the maximum retry attempts, dest=%d, owner=%d)", *dest, req->resource.owner);
         else
-            log_resource_err(resource, "failed to send (reaching the maximum retry attempts, owner=%d)", req->resource.owner);
+            log_err("failed to send (reaching the maximum retry attempts, owner=%d)", req->resource.owner);
     }
     free(req);
-    log_klnk_io_sync(resource, ">-- io_sync (end, ret=%s) --<", log_get_err(ret));
     return ret;
 }
 
@@ -186,7 +186,6 @@ int klnk_io_direct(vres_t *resource, char *in, size_t inlen, char *out, size_t o
     }
     memset(buf, 0, buflen);
     req = (vres_req_t *)buf;
-    req->src.id = -1;
     req->resource = *resource;
     req->length = inlen;
     if (inlen > 0)

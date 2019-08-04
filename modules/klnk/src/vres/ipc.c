@@ -44,17 +44,14 @@ int vres_ipc_get(vres_t *resource, ipc_create_t create, ipc_init_t init)
         goto release;
     }
     if (flags & IPC_CREAT) {
-        ret = vres_create(resource);
-        if (!ret)
+        if (vres_create(resource))
             owner = 1;
-        else if ((-EEXIST == ret) && !(flags & IPC_EXCL))
-            ret = 0;
+        else if (flags & IPC_EXCL)
+            ret = -EEXIST;
     } else if (!vres_exists(resource))
         ret = -ENOENT;
-    if (ret) {
-        log_resource_err(resource, "failed to create, ret=%s", log_get_err(ret));
+    if (ret)
         goto out;
-    }
     ret = vres_member_create(resource);
     if (ret) {
         log_resource_err(resource, "failed to create member");

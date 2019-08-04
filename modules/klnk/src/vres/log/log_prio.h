@@ -27,4 +27,22 @@
 #define log_prio_check(...) do {} while (0)
 #endif
 
+#ifdef LOG_PRIO_SELECT
+#define log_prio_select(resource, pos) log_resource_info(resource, "pos=%d", pos)
+#else
+#define log_prio_select(...) do {} while (0)
+#endif
+
+#ifdef LOG_PRIO_SET_BUSY
+#define log_prio_set_busy log_resource_ln
+#else
+#define log_prio_set_busy(...) do {} while (0)
+#endif
+
+#ifdef LOG_PRIO_SET_IDLE
+#define log_prio_set_idle log_resource_ln
+#else
+#define log_prio_set_idle(...) do {} while (0)
+#endif
+
 #endif

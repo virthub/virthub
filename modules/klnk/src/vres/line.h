@@ -5,25 +5,10 @@
 #include <string.h>
 #include <stdlib.h>
 
-#define VRES_LINE_SHIFT      4
+#define VRES_LINE_SHIFT      6
 #define VRES_LINE_SIZE       (PAGE_SIZE >> VRES_LINE_SHIFT)
 #define VRES_LINE_MAX        (1 << VRES_LINE_SHIFT)
 #define VRES_LINE_NR_SAMPLES 16
-
-#define LOG_NR_LINES         1
-#define LOG_NR_BYTES         (sizeof(unsigned long) * 20)
-
-#ifdef SHOW_LING
-#define LOG_LINES
-#define LOG_LINE_DIFF
-
-#ifdef SHOW_MORE
-#define LOF_LINE_NUM
-#define LOG_LINE_CONTENT
-#endif
-#endif
-
-#include "log_line.h"
 
 typedef int32_t vres_digest_t;
 

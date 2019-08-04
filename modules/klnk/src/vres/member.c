@@ -19,7 +19,7 @@ int vres_member_send_req(vres_req_t *req)
     vres_t *resource = &req->resource;
     vres_id_t src = vres_get_id(resource);
 
-    log_member_send_req(resource, "*start*");
+    log_member_send_req(resource, "start ...");
     vres_rwlock_wrlock(resource);
     entry = vres_member_get(resource);
     if (!entry) {
@@ -40,7 +40,7 @@ int vres_member_send_req(vres_req_t *req)
     }
     vres_member_put(entry);
     vres_rwlock_unlock(resource);
-    log_member_send_req(resource, "*finished*");
+    log_member_send_req(resource, ">> finished <<");
     return ret;
 }
 

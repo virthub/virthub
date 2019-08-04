@@ -16,32 +16,25 @@ int vres_tsk_get(vres_t *resource, vres_id_t *id)
     vres_id_t curr = resource->key;
     vres_t *tsk = &res;
 
-#if MANAGER_TYPE == NO_MANAGER
+#if MANAGER_TYPE == AREA_MANAGER
     assert(resource->key >= TSK_ID_START);
 #endif
     assert((vres_get_id(resource) == resource->owner) && (resource->key == resource->owner));
+    vres_lock(resource);
     for (i = 0; i < retry_max; i++) {
-        vres_lock(tsk);
-        ret = vres_create(tsk);
+        bool alloc = vres_create(tsk);
 #ifdef TSK_REALLOC
-        if (ret) {
-            vres_unlock(tsk);
-            if (ret == -EEXIST) {
-                if (curr < VRES_ID_MAX)
-                    curr += 1;
-                else
-                    curr = TSK_ID_START;
-                tsk->key = curr;
-                tsk->owner = curr;
-                continue;
-            }
+        if (!alloc) {
+            if (curr < VRES_ID_MAX)
+                curr += 1;
+            else
+                curr = TSK_ID_START;
+            tsk->key = curr;
+            tsk->owner = curr;
+            continue;
         }
 #endif
         break;
-    }
-    if (ret) {
-        log_err("failed to register, ret=%s", log_get_err(ret));
-        goto out;
     }
     ret = vres_mkdir(tsk);
     if (ret) {
@@ -59,7 +52,7 @@ int vres_tsk_get(vres_t *resource, vres_id_t *id)
         vres_file_close(filp);
     }
 out:
-    vres_unlock(tsk);
+    vres_unlock(resource, NULL);
     return ret;
 }
 
@@ -153,7 +146,7 @@ int vres_tsk_put(vres_t *resource)
     if (!ret)
         log_tsk_put(resource);
 out:
-    vres_unlock(tsk);
+    vres_unlock(tsk, NULL);
     return ret;
 }
 

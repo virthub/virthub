@@ -145,6 +145,8 @@ def _build(args=None, quiet=False):
     for i in _dirs:
         dirname = os.path.join(_home, i)
         for j in os.listdir(dirname):
+            if j not in _modules:
+                continue
             path = os.path.join(dirname, j)
             if not path.startswith('.') and os.path.isdir(path):
                 if j in _args and not int(_args[j]):

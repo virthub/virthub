@@ -1,7 +1,7 @@
 #ifndef _LBFS_H
 #define _LBFS_H
 
-#define FUSE_USE_VERSION 26
+#define FUSE_USE_VERSION 29
 
 #include <fuse.h>
 #include <fcntl.h>

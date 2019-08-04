@@ -11,7 +11,150 @@ int prio_stat = 0;
 int prio_table[VRES_PRIO_MAX][VRES_PRIO_NR_INTERVALS];
 vres_prio_lock_group_t prio_lock_group[VRES_PRIO_LOCK_GROUP_SIZE];
 
-#ifdef CHECK_LIVE_TIME
+int vres_prio_lock_compare(const void *val0, const void *val1)
+{
+    vres_prio_lock_entry_t *ent0 = ((vres_prio_lock_desc_t *)val0)->entry;
+    vres_prio_lock_entry_t *ent1 = ((vres_prio_lock_desc_t *)val1)->entry;
+    size_t size = VRES_PRIO_LOCK_ENTRY_SIZE * sizeof(vres_prio_lock_entry_t);
+
+    return memcmp(ent0, ent1, size);
+}
+
+
+static inline unsigned long vres_prio_lock_hash(vres_prio_lock_desc_t *desc)
+{
+    vres_prio_lock_entry_t *ent = desc->entry;
+
+    assert(VRES_PRIO_LOCK_ENTRY_SIZE == 3);
+    return (ent[0] ^ ent[1] ^ ent[2]) % VRES_PRIO_LOCK_GROUP_SIZE;
+}
+
+
+static inline void vres_prio_lock_get_desc(vres_t *resource, vres_prio_lock_desc_t *desc)
+{
+    desc->entry[0] = resource->key;
+    desc->entry[1] = resource->cls;
+    desc->entry[2] = resource->owner;
+}
+
+
+static inline vres_prio_lock_t *vres_prio_lock_alloc(vres_prio_lock_desc_t *desc)
+{
+    vres_prio_lock_t *lock = (vres_prio_lock_t *)malloc(sizeof(vres_prio_lock_t));
+
+    if (lock) {
+        lock->count = 0;
+        memcpy(&lock->desc, desc, sizeof(vres_prio_lock_desc_t));
+        pthread_mutex_init(&lock->mutex, NULL);
+        pthread_cond_init(&lock->cond, NULL);
+    }
+    return lock;
+}
+
+
+static inline vres_prio_lock_t *vres_prio_lock_lookup(vres_prio_lock_group_t *group, vres_prio_lock_desc_t *desc)
+{
+    rbtree_node_t *node = NULL;
+
+    if (!rbtree_find(&group->tree, desc, &node))
+        return tree_entry(node, vres_prio_lock_t, node);
+    else
+        return NULL;
+}
+
+
+static inline void vres_prio_lock_insert(vres_prio_lock_group_t *group, vres_prio_lock_t *lock)
+{
+    rbtree_insert(&group->tree, &lock->desc, &lock->node);
+}
+
+
+static inline vres_prio_lock_t *vres_prio_lock_get(vres_t *resource)
+{
+    vres_prio_lock_t *lock;
+    vres_prio_lock_desc_t desc;
+    vres_prio_lock_group_t *grp;
+
+    vres_prio_lock_get_desc(resource, &desc);
+    grp = &prio_lock_group[vres_prio_lock_hash(&desc)];
+    pthread_mutex_lock(&grp->mutex);
+    lock = vres_prio_lock_lookup(grp, &desc);
+    if (!lock) {
+        lock = vres_prio_lock_alloc(&desc);
+        if (!lock)
+            goto out;
+        vres_prio_lock_insert(grp, lock);
+    }
+    pthread_mutex_lock(&lock->mutex);
+    lock->count++;
+out:
+    pthread_mutex_unlock(&grp->mutex);
+    return lock;
+}
+
+
+static void vres_prio_lock_free(vres_prio_lock_group_t *group, vres_prio_lock_t *lock)
+{
+    rbtree_remove(&group->tree, &lock->desc);
+    pthread_mutex_destroy(&lock->mutex);
+    pthread_cond_destroy(&lock->cond);
+    free(lock);
+}
+
+
+int vres_prio_lock(vres_t *resource)
+{
+    vres_prio_lock_t *lock;
+
+    if (!prio_stat) {
+        log_resource_err(resource, "invalid state");
+        return -EINVAL;
+    }
+    lock = vres_prio_lock_get(resource);
+    if (!lock)
+        return -ENOENT;
+    if (lock->count > 1)
+        pthread_cond_wait(&lock->cond, &lock->mutex);
+    pthread_mutex_unlock(&lock->mutex);
+    return 0;
+}
+
+
+void vres_prio_unlock(vres_t *resource)
+{
+    bool release = false;
+    vres_prio_lock_t *lock;
+    vres_prio_lock_desc_t desc;
+    vres_prio_lock_group_t *grp;
+
+    if (!prio_stat) {
+        log_resource_err(resource, "invalid state");
+        return;
+    }
+    vres_prio_lock_get_desc(resource, &desc);
+    grp = &prio_lock_group[vres_prio_lock_hash(&desc)];
+    pthread_mutex_lock(&grp->mutex);
+    lock = vres_prio_lock_lookup(grp, &desc);
+    if (!lock) {
+        pthread_mutex_unlock(&grp->mutex);
+        return;
+    }
+    pthread_mutex_lock(&lock->mutex);
+    if (lock->count > 0) {
+        lock->count--;
+        if (lock->count > 0)
+            pthread_cond_signal(&lock->cond);
+        else
+            release = true;
+    }
+    pthread_mutex_unlock(&lock->mutex);
+    if (release)
+        vres_prio_lock_free(grp, lock);
+    pthread_mutex_unlock(&grp->mutex);
+}
+
+
+#ifdef ENABLE_LIVE_TIME
 void vres_prio_gen()
 {
     int i, j, k;
@@ -55,15 +198,6 @@ void vres_prio_gen()
 }
 #endif
 
-int vres_prio_lock_compare(const void *val0, const void *val1)
-{
-    vres_prio_lock_entry_t *ent0 = ((vres_prio_lock_desc_t *)val0)->entry;
-    vres_prio_lock_entry_t *ent1 = ((vres_prio_lock_desc_t *)val1)->entry;
-    size_t size = VRES_PRIO_LOCK_ENTRY_SIZE * sizeof(vres_prio_lock_entry_t);
-
-    return memcmp(ent0, ent1, size);
-}
-
 
 void vres_prio_init()
 {
@@ -71,11 +205,11 @@ void vres_prio_init()
 
     if (prio_stat & VRES_STAT_INIT)
         return;
-    vres_prio_gen();
     for (i = 0; i < VRES_PRIO_LOCK_GROUP_SIZE; i++) {
         pthread_mutex_init(&prio_lock_group[i].mutex, NULL);
         rbtree_new(&prio_lock_group[i].tree, vres_prio_lock_compare);
     }
+    vres_prio_gen();
     prio_stat |= VRES_STAT_INIT;
 }
 
@@ -83,10 +217,11 @@ void vres_prio_init()
 int vres_prio_do_create(vres_t *resource, vres_time_t off)
 {
     vres_prio_t *prio;
+    vres_file_entry_t *entry;
     char path[VRES_PATH_MAX];
 
     vres_get_priority_path(resource, path);
-    vres_file_entry_t *entry = vres_file_get_entry(path, sizeof(vres_prio_t), FILE_RDWR | FILE_CREAT);
+    entry = vres_file_get_entry(path, sizeof(vres_prio_t), FILE_RDWR | FILE_CREAT);
     if (!entry) {
         log_resource_err(resource, "no entry");
         return -ENOENT;
@@ -106,159 +241,25 @@ int vres_prio_create(vres_t *resource, bool sync)
     int ret;
     vres_time_t off = 0;
 
+#ifdef VRES_PRIO_INIT_TIME
     if (sync) {
         vres_time_t time;
         vres_time_t start = vres_get_time();
 
         ret = vres_sync_request(resource, &time);
         if (ret) {
-            log_resource_err(resource, "failed to sync");
+            log_resource_err(resource, "failed to get time");
             return ret;
         }
         off = vres_get_time_offset(start, time);
     }
+#endif
     ret = vres_prio_do_create(resource, off);
     if (ret) {
         log_resource_err(resource, "failed to create");
         return ret;
     }
     return ret;
-}
-
-
-static inline unsigned long vres_prio_lock_hash(vres_prio_lock_desc_t *desc)
-{
-    unsigned long *ent = desc->entry;
-
-    assert(VRES_PRIO_LOCK_ENTRY_SIZE == 3);
-    return (ent[0] ^ ent[1] ^ ent[2]) % VRES_PRIO_LOCK_GROUP_SIZE;
-}
-
-
-static inline void vres_prio_lock_get_desc(vres_t *resource, vres_prio_lock_desc_t *desc)
-{
-    desc->entry[0] = resource->key;
-    desc->entry[1] = resource->cls;
-    desc->entry[2] = resource->owner;
-}
-
-
-static inline vres_prio_lock_t *vres_prio_lock_alloc(vres_prio_lock_desc_t *desc)
-{
-    vres_prio_lock_t *lock = (vres_prio_lock_t *)malloc(sizeof(vres_prio_lock_t));
-
-    if (!lock)
-        return NULL;
-    lock->count = 0;
-    memcpy(&lock->desc, desc, sizeof(vres_prio_lock_desc_t));
-    pthread_mutex_init(&lock->mutex, NULL);
-    pthread_cond_init(&lock->cond, NULL);
-    return lock;
-}
-
-
-static inline vres_prio_lock_t *vres_prio_lock_lookup(vres_prio_lock_group_t *group, vres_prio_lock_desc_t *desc)
-{
-    rbtree_node_t *node = NULL;
-
-    if (!rbtree_find(&group->tree, desc, &node))
-        return tree_entry(node, vres_prio_lock_t, node);
-    else
-        return NULL;
-}
-
-
-static inline void vres_prio_lock_insert(vres_prio_lock_group_t *group, vres_prio_lock_t *lock)
-{
-    rbtree_insert(&group->tree, &lock->desc, &lock->node);
-}
-
-
-static inline vres_prio_lock_t *vres_prio_lock_get(vres_t *resource)
-{
-    vres_prio_lock_desc_t desc;
-    vres_prio_lock_group_t *grp;
-    vres_prio_lock_t *lock = NULL;
-
-    vres_prio_lock_get_desc(resource, &desc);
-    grp = &prio_lock_group[vres_prio_lock_hash(&desc)];
-    pthread_mutex_lock(&grp->mutex);
-    lock = vres_prio_lock_lookup(grp, &desc);
-    if (!lock) {
-        lock = vres_prio_lock_alloc(&desc);
-        if (!lock) {
-            log_resource_err(resource, "no memory");
-            goto out;
-        }
-        vres_prio_lock_insert(grp, lock);
-    }
-    pthread_mutex_lock(&lock->mutex);
-    lock->count++;
-out:
-    pthread_mutex_unlock(&grp->mutex);
-    return lock;
-}
-
-
-static void vres_prio_lock_free(vres_prio_lock_group_t *group, vres_prio_lock_t *lock)
-{
-    rbtree_remove(&group->tree, &lock->desc);
-    pthread_mutex_destroy(&lock->mutex);
-    pthread_cond_destroy(&lock->cond);
-    free(lock);
-}
-
-
-static int vres_prio_lock(vres_t *resource)
-{
-    vres_prio_lock_t *lock;
-
-    if (!(prio_stat & VRES_STAT_INIT))
-        return -EINVAL;
-    log_prio_lock(resource);
-    lock = vres_prio_lock_get(resource);
-    if (!lock) {
-        log_resource_err(resource, "no entry");
-        return -ENOENT;
-    }
-    if (lock->count > 1)
-        pthread_cond_wait(&lock->cond, &lock->mutex);
-    pthread_mutex_unlock(&lock->mutex);
-    return 0;
-}
-
-
-static void vres_prio_unlock(vres_t *resource)
-{
-    bool empty = false;
-    vres_prio_lock_t *lock;
-    vres_prio_lock_desc_t desc;
-    vres_prio_lock_group_t *grp;
-
-    if (!(prio_stat & VRES_STAT_INIT))
-        return;
-    vres_prio_lock_get_desc(resource, &desc);
-    grp = &prio_lock_group[vres_prio_lock_hash(&desc)];
-    pthread_mutex_lock(&grp->mutex);
-    lock = vres_prio_lock_lookup(grp, &desc);
-    if (!lock) {
-        log_resource_err(resource, "cannot find the lock");
-        pthread_mutex_unlock(&grp->mutex);
-        return;
-    }
-    pthread_mutex_lock(&lock->mutex);
-    if (lock->count > 0) {
-        lock->count--;
-        if (lock->count > 0)
-            pthread_cond_signal(&lock->cond);
-        else
-            empty = true;
-    }
-    pthread_mutex_unlock(&lock->mutex);
-    if (empty)
-        vres_prio_lock_free(grp, lock);
-    pthread_mutex_unlock(&grp->mutex);
-    log_prio_lock(resource);
 }
 
 
@@ -296,7 +297,7 @@ static int vres_prio_get_waittime(vres_t *resource, vres_time_t *waittime)
 
 static int vres_prio_convert_from_time(vres_t *resource, vres_id_t id, vres_time_t time)
 {
-#ifdef VRES_PRIO_VIRTUAL_MEMBER
+#ifdef VRES_PRIO_MAP_MEMBER
     int pos = id % VRES_PRIO_MAX;
 #else
     int pos = vres_member_get_pos(resource, id);
@@ -309,7 +310,7 @@ static int vres_prio_convert_from_time(vres_t *resource, vres_id_t id, vres_time
 }
 
 
-#ifdef CHECK_LIVE_TIME
+#ifdef ENABLE_LIVE_TIME
 static bool vres_prio_is_expired(vres_prio_t *prio)
 {
     return prio->t_update + prio->t_live < vres_get_time();
@@ -397,9 +398,10 @@ int vres_prio_set(vres_t *resource, vres_prio_t *prio)
 }
 
 
-#ifdef CHECK_LIVE_TIME
+#ifdef ENABLE_LIVE_TIME
 int vres_prio_check_live_time(vres_t *resource, int *prio, vres_time_t *live)
 {
+#ifdef ENABLE_PRIORITY
     int ret;
     vres_time_t curr;
     vres_id_t id = vres_get_id(resource);
@@ -410,19 +412,22 @@ int vres_prio_check_live_time(vres_t *resource, int *prio, vres_time_t *live)
     ret = vres_prio_get_time(resource, &curr);
     if (ret < 0) {
         log_resource_err(resource, "failed to get time");
-        goto unlock;
+        goto out;
     }
     ret = vres_prio_convert_from_time(resource, id, curr);
     if (ret < 0) {
         log_resource_err(resource, "failed to get priority");
-        goto unlock;
+        goto out;
     }
     *live = VRES_PRIO_PERIOD - curr % VRES_PRIO_PERIOD;
     *prio = ret;
     ret = 0;
-unlock:
+out:
     vres_prio_unlock(resource);
     return ret;
+#else
+    return 0;
+#endif
 }
 
 
@@ -466,10 +471,7 @@ int vres_prio_set_busy(vres_t *resource)
 
     if (!(prio_stat & VRES_STAT_INIT))
         return -EINVAL;
-#ifdef VRES_PRIO_UPDATE_CONTROL
-    if (vres_get_flags(resource) & VRES_REDO)
-        return 0;
-#endif
+    log_prio_set_busy(resource);
     vres_get_priority_path(resource, path);
     vres_prio_lock(resource);
     entry = vres_file_get_entry(path, sizeof(vres_prio_t), FILE_RDWR);
@@ -497,10 +499,6 @@ int vres_prio_set_idle(vres_t *resource)
 
     if (!(prio_stat & VRES_STAT_INIT))
         return -EINVAL;
-#ifdef VRES_PRIO_UPDATE_CONTROL
-    if (vres_get_flags(resource) & VRES_REDO)
-        return 0;
-#endif
     vres_get_priority_path(resource, path);
     vres_prio_lock(resource);
     entry = vres_file_get_entry(path, sizeof(vres_prio_t), FILE_RDWR);
@@ -512,143 +510,188 @@ int vres_prio_set_idle(vres_t *resource)
         vres_id_t id = vres_get_id(resource);
 
         prio = vres_file_get_desc(entry, vres_prio_t);
-        if (!vres_prio_is_expired(prio) && (id == prio->id)) {
-            prio->id = id;
+        if (!vres_prio_is_expired(prio) && (id == prio->id))
             prio->t_update = vres_get_time();
-        }
         vres_file_put_entry(entry);
     }
     vres_prio_unlock(resource);
+    log_prio_set_idle(resource);
     return ret;
 }
 #endif
 
 static inline void vres_prio_wait(vres_time_t timeout)
 {
-    pthread_cond_t cond;
-    struct timespec time;
-    pthread_mutex_t mutex;
+    if (timeout > 0) {
+        pthread_cond_t cond;
+        struct timespec time;
+        pthread_mutex_t mutex;
 
-    if (timeout <= 0)
-        return;
-    pthread_mutex_init(&mutex, NULL);
-    pthread_cond_init(&cond, NULL);
-    vres_set_timeout(&time, timeout);
-    pthread_mutex_lock(&mutex);
-    pthread_cond_timedwait(&cond, &mutex, &time);
-    pthread_mutex_unlock(&mutex);
+        pthread_mutex_init(&mutex, NULL);
+        pthread_cond_init(&cond, NULL);
+        vres_set_timeout(&time, timeout);
+        pthread_mutex_lock(&mutex);
+        pthread_cond_timedwait(&cond, &mutex, &time);
+        pthread_mutex_unlock(&mutex);
+    }
 }
 
 
 void *vres_prio_select(void *arg)
 {
-    vres_index_t index;
+    int ret = 0;
+    bool has_rec;
     char path[VRES_PATH_MAX];
     vres_t *resource = (vres_t *)arg;
 
-    vres_get_path(resource, path);
-    vres_prio_lock(resource);
-    while (!vres_record_first(path, &index)) {
-        int ret;
-        vres_id_t id;
-        vres_time_t time;
-        vres_prio_t prio;
-        vres_id_t user = 0;
-        vres_record_t record;
-        vres_index_t pos = index;
-#if !defined(CHECK_LIVE_TIME) && !defined(VRES_PRIO_NOWAIT)
-        int curr = -1;
-        int val;
-#endif
-retry:
-        ret = vres_prio_get(resource, &prio);
-        if (ret) {
-            log_resource_err(resource, "failed to get priority");
-            goto unlock;
-        }
-        if (!vres_prio_is_expired(&prio)) {
-            ret = vres_prio_get_waittime(resource, &time);
-            if (ret) {
-                log_resource_err(resource, "failed to get wait time");
-                goto unlock;
-            }
-            vres_prio_unlock(resource);
-            vres_prio_wait(time);
-            vres_prio_lock(resource);
-            goto retry;
-        }
-#if !defined(CHECK_LIVE_TIME) && !defined(VRES_PRIO_NOWAIT)
-        ret = vres_prio_get_time(resource, &time);
-        if (ret) {
-            log_resource_err(resource, "failed to get time");
-            goto unlock;
-        }
-        do {
-            ret = vres_record_get(path, index, &record);
-            if (ret) {
-                log_resource_err(resource, "failed to get record");
-                goto unlock;
-            }
-            id = vres_get_id(&record.req->resource);
-            vres_record_put(&record);
-            val = vres_prio_convert_from_time(resource, id, time);
-            if (val < 0) {
-                log_resource_err(resource, "failed to get priority");
-                goto unlock;
-            }
-            if (val > curr) {
-                user = id;
-                curr = val;
-                pos = index;
-            }
-        } while (!vres_record_next(path, &index));
+    vres_get_path(resource, path); // Note that the delayed requests are saved into resource directory
+    do {
+        vres_index_t index;
 
-        if (curr < 0) {
-            log_resource_err(resource, "no record");
-            goto unlock;
-        }
+        vres_prio_lock(resource);
+        has_rec = 0 == vres_record_head(path, &index);
+        if (has_rec) {
+            int i;
+            vres_id_t id;
+            vres_time_t time;
+            vres_prio_t prio;
+            vres_id_t select = 0;
+            vres_record_t record;
+            vres_index_t pos = index;
+#ifndef ENABLE_LIVE_TIME
+            int curr = -1;
+            int val;
 #endif
-        do {
-            ret = vres_record_get(path, pos, &record);
-            if (ret) {
-                log_resource_err(resource, "failed to get record");
-                goto unlock;
-            }
-            id = vres_get_id(&record.req->resource);
-            if ((id == user) || !user) {
-                vres_prio_unlock(resource);
-                vres_proc(record.req, VRES_PRIO);
-                vres_prio_lock(resource);
-            }
-            vres_record_put(&record);
-            if ((id == user) || !user) {
-                vres_record_remove(path, pos);
-#if !defined(CHECK_LIVE_TIME) && !defined(VRES_PRIO_NOWAIT)
+            for (i = 0; i < VRES_PRIO_RETRY_MAX; i++) {
                 ret = vres_prio_get(resource, &prio);
                 if (ret) {
                     log_resource_err(resource, "failed to get priority");
-                    goto unlock;
-                }
-                if (vres_prio_is_expired(&prio) || (prio.id != user))
                     break;
-#endif
+                }
+                if (!vres_prio_is_expired(&prio)) {
+                    ret = vres_prio_get_waittime(resource, &time);
+                    if (ret) {
+                        log_resource_err(resource, "failed to get wait time");
+                        break;
+                    }
+                    vres_prio_unlock(resource);
+                    vres_prio_wait(time);
+                    vres_prio_lock(resource);
+                } else
+                    break;
             }
-        } while (!vres_record_next(path, &pos));
-    }
-unlock:
-    vres_prio_unlock(resource);
+#ifndef ENABLE_LIVE_TIME
+            if (!ret) {
+                ret = vres_prio_get_time(resource, &time);
+                if (!ret) {
+                    do {
+                        ret = vres_record_get(path, index, &record);
+                        if (ret) {
+                            log_resource_warning(resource, "cannot get any record");
+                            break;
+                        }
+                        id = vres_get_id(&record.req->resource);
+                        vres_record_put(&record);
+                        val = vres_prio_convert_from_time(resource, id, time);
+                        if (val < 0) {
+                            log_resource_err(resource, "failed to get priority");
+                            ret = -EINVAL;
+                            break;
+                        }
+                        if (val > curr) {
+                            curr = val;
+                            pos = index;
+                            select = id;
+                        }
+                    } while (!vres_record_next(path, &index));
+                    if (!ret && (curr < 0)) {
+                        log_resource_warning(resource, "no available record");
+                        ret = -ENOENT;
+                    }
+                } else
+                    log_resource_err(resource, "failed to get time");
+            }
+#endif
+            if (!ret) {
+                do {
+                    vres_t *pres;
+                    vres_req_t *req;
+                    bool remove = false;
+
+                    ret = vres_record_get(path, pos, &record);
+                    if (ret) {
+                        log_resource_warning(resource, "cannot get any record");
+                        break;
+                    }
+                    req = record.req;
+                    pres = &req->resource;
+                    id = vres_get_id(pres);
+                    if ((id == select) || !select) {
+                        vres_shmfault_arg_t *arg = (vres_shmfault_arg_t *)req->buf;
+                        bool need_lock = arg->cmd != VRES_SHM_PROPOSE;
+                        vres_reply_t *reply = NULL;
+
+                        vres_prio_unlock(resource);
+                        log_prio_select(pres, pos);
+                        if (need_lock) {
+                            vres_lock_t *lock;
+
+                            assert(vres_need_half_lock(pres));
+                            lock = vres_lock_top(pres);
+                            if (lock) {
+                                ret = vres_lock_buttom(lock);
+                                if (!ret)
+                                    reply = vres_proc(req, VRES_PRIO);
+                                else
+                                    log_resource_err(resource, "failed to lock");
+                                vres_unlock(pres, lock);
+                            } else {
+                                log_resource_err(resource, "failed to get lock");
+                                ret = -ENOENT;
+                            }
+                        } else
+                            reply = vres_proc(req, VRES_PRIO);
+                        vres_prio_lock(resource);
+                        if (!ret) {
+                            if (reply && vres_has_err(reply)) {
+                                if (vres_get_err(reply) != -EAGAIN) {
+                                    log_resource_err(resource, "failed to handle request");
+                                    ret = -EINVAL;
+                                }
+                            } else
+                                remove = true;
+                            if (reply)
+                                free(reply);
+                        }
+                        if (!remove)
+                            break;
+                    }
+                    vres_record_put(&record);
+                    if (remove) {
+                        vres_record_remove(path, pos);
+#ifndef ENABLE_LIVE_TIME
+                        ret = vres_prio_get(resource, &prio);
+                        if (ret) {
+                            log_resource_err(resource, "failed to get priority");
+                            break;
+                        }
+                        if (vres_prio_is_expired(&prio) || (prio.id != select))
+                            break;
+#endif
+                    }
+                } while (!vres_record_next(path, &pos));
+            }
+            if (!ret)
+                has_rec = !vres_record_head(path, &index);
+        }
+        vres_prio_unlock(resource);
+    } while (has_rec && !ret);
     free(arg);
     return NULL;
 }
 
 
-void vres_prio_clear(vres_req_t *req)
-{
-    vres_clear_flags(&req->resource, VRES_REDO);
-}
-
-
-#ifdef CHECK_LIVE_TIME
+#ifdef ENABLE_LIVE_TIME
 int vres_prio_extract(vres_req_t *req, int *val, vres_time_t *live)
 {
     int ret = -EINVAL;
@@ -672,16 +715,54 @@ int vres_prio_extract(vres_req_t *req, int *val, vres_time_t *live)
 #endif
 
 
-int vres_prio_check(vres_req_t *req)
+int vres_prio_monitor(vres_req_t *req)
 {
-    int ret = 0;
-    int empty = 0;
-    vres_prio_t prio;
+    int ret;
+    vres_index_t start;
     vres_index_t index;
-    bool expire = false;
     char path[VRES_PATH_MAX];
     vres_t *resource = &req->resource;
-#ifdef CHECK_LIVE_TIME
+
+    vres_get_path(resource, path);
+    ret = vres_record_save(path, req, &index);
+    if (ret) {
+        log_resource_err(resource, "failed to save record");
+        return ret;
+    }
+    if (!vres_record_head(path, &start)) {
+        if (start == index) {
+            vres_t *arg;
+            pthread_t tid;
+            pthread_attr_t attr;
+
+            arg = (vres_t *)malloc(sizeof(vres_t));
+            if (!arg) {
+                log_resource_err(resource, "no memory");
+                return -ENOMEM;
+            }
+            memcpy(arg, resource, sizeof(vres_t));
+            pthread_attr_init(&attr);
+            pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+            pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM);
+            ret = pthread_create(&tid, &attr, vres_prio_select, arg);
+            pthread_attr_destroy(&attr);
+            if (ret) {
+                log_resource_err(resource, "failed to create thread");
+                free(arg);
+                return ret;
+            }
+        }
+    }
+    return 0;
+}
+
+
+int vres_prio_check(vres_req_t *req, int flags)
+{
+    int ret;
+    vres_prio_t prio;
+    vres_t *resource = &req->resource;
+#ifdef ENABLE_LIVE_TIME
     vres_time_t live;
     int val;
 #endif
@@ -692,72 +773,38 @@ int vres_prio_check(vres_req_t *req)
         log_resource_err(resource, "failed to get priority");
         goto out;
     }
-#ifdef CHECK_LIVE_TIME
+#ifdef ENABLE_LIVE_TIME
     ret = vres_prio_extract(req, &val, &live);
     if (ret) {
         log_resource_err(resource, "failed to extract priority");
         goto out;
     }
 #endif
-    expire = vres_prio_is_expired(&prio);
-    if (!expire) {
-#ifdef CHECK_LIVE_TIME
+    if (!vres_prio_is_expired(&prio)) {
+#ifdef ENABLE_LIVE_TIME
         if (val >= prio.val)
             goto out;
 #else
-        vres_id_t id = vres_get_id(resource);
-
-        if (vres_prio_compare(resource, id, prio.id) >= 0)
+        if (vres_prio_compare(resource, vres_get_id(resource), prio.id) >= 0)
             goto out;
 #endif
-    }
-    vres_get_path(resource, path);
-    empty = vres_record_empty_check(path);
-    if (empty < 0) {
-        log_resource_err(resource, "failed to check record");
-        ret = -EINVAL;
-        goto out;
-    }
-    if (expire && empty)
-        goto out;
-    ret = vres_record_save(path, req, &index);
-    if (ret) {
-        log_resource_err(resource, "failed to save record");
-        goto out;
-    }
-    if (empty) {
-        vres_t *arg;
-        pthread_t tid;
-        pthread_attr_t attr;
-
-        arg = (vres_t *)malloc(sizeof(vres_t));
-        if (!arg) {
-            log_resource_err(resource, "no memory");
-            ret = -ENOMEM;
-            goto out;
-        }
-        memcpy(arg, resource, sizeof(vres_t));
-        pthread_attr_init(&attr);
-        pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-        pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM);
-        ret = pthread_create(&tid, &attr, vres_prio_select, arg);
-        pthread_attr_destroy(&attr);
-        if (ret) {
-            log_resource_err(resource, "failed to create thread");
-            free(arg);
-            goto out;
-        }
-    }
-    vres_prio_unlock(resource);
-    log_prio_check(resource, "finished! (ret=EAGAIN)");
-    return -EAGAIN;
-out:
-#ifdef CHECK_LIVE_TIME
-    if (!ret)
+    } else {
+#ifdef ENABLE_LIVE_TIME
         ret = vres_prio_update(resource, val, live);
 #endif
+        goto out;
+    }
+    if (!(flags & VRES_PRIO)) {
+        ret = vres_prio_monitor(req);
+        if (ret)
+            goto out;
+    }
     vres_prio_unlock(resource);
-    log_prio_check(resource, "finished!");
+    log_prio_check(resource, ">> finished (retry) <<");
+    return -EAGAIN;
+out:
+    vres_prio_unlock(resource);
+    log_prio_check(resource, ">> finished (ret=%s) <<", log_get_err(ret));
     return ret;
 }
 
@@ -775,7 +822,7 @@ int vres_prio_sync_time(vres_t *resource)
         goto out;
     }
     start = vres_get_time();
-    if (start - prio.t_sync > VRES_PRIO_SYNC_INTERVAL) {
+    if (start - prio.t_sync > VRES_PRIO_SYNC_INTV) {
         vres_time_t time;
 
         ret = vres_sync_request(resource, &time);

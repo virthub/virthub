@@ -59,7 +59,7 @@ int vres_smgr_check_resource(vres_t *resource)
     if (!vres_file_is_dir(path)) {
         if (VRES_CLS_SHM == resource->cls) {
             vres_mkdir(resource);
-#ifdef CHECK_PRIORITY
+#ifdef ENABLE_PRIORITY
             vres_prio_create(resource, true);
 #endif
             vres_smgr_create(resource);

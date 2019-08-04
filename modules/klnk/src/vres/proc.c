@@ -110,30 +110,35 @@ vres_reply_t *vres_proc_sync(vres_req_t *req, int flags)
 
 vres_reply_t *vres_proc(vres_req_t *req, int flags)
 {
+    vres_reply_t *reply = NULL;
     vres_t *resource = &req->resource;
     vres_op_t op = vres_get_op(resource);
-    vres_cls_t cls = resource->cls;
 
-    log_proc(req);
+    log_proc(req, NULL, true);
     trace_proc(req);
     if (vres_is_sync(op))
-        return vres_proc_sync(req, flags);
+        reply = vres_proc_sync(req, flags);
     else {
-        switch(cls) {
+        switch(resource->cls) {
         case VRES_CLS_MSG:
-            return vres_proc_msg(req, flags);
+            reply = vres_proc_msg(req, flags);
+            break;
         case VRES_CLS_SEM:
-            return vres_proc_sem(req, flags);
+            reply = vres_proc_sem(req, flags);
+            break;
         case VRES_CLS_SHM:
-            return vres_proc_shm(req, flags);
+            reply = vres_proc_shm(req, flags);
+            break;
         case VRES_CLS_TSK:
-            return vres_proc_tsk(req, flags);
+            reply = vres_proc_tsk(req, flags);
+            break;
         default:
-            log_resource_err(resource, "invalid class, cls=%d", cls);
+            log_resource_err(resource, "invalid class");
             break;
         }
-        return NULL;
     }
+    log_proc(req, reply, false);
+    return reply;
 }
 
 
@@ -148,7 +153,7 @@ int vres_proc_local(vres_arg_t *arg)
     case VRES_OP_SEMGET:
         return vres_ipc_get(resource, vres_sem_create, NULL);
     case VRES_OP_SHMGET:
-        return vres_ipc_get(resource, vres_shm_create, vres_shm_init);
+        return vres_ipc_get(resource, vres_shm_create, vres_shm_ipc_init);
     case VRES_OP_SHMPUT:
         return vres_ipc_put(resource);
     case VRES_OP_TSKGET:

@@ -26,7 +26,6 @@ void vres_page_lock_init()
 
     if (vres_page_lock_stat & VRES_STAT_INIT)
         return;
-
     for (i = 0; i < VRES_PAGE_LOCK_GROUP_SIZE; i++) {
         pthread_mutex_init(&vres_page_lock_group[i].mutex, NULL);
         rbtree_new(&vres_page_lock_group[i].tree, vres_page_lock_compare);
@@ -55,13 +54,12 @@ static inline vres_page_lock_t *vres_page_lock_alloc(vres_page_lock_desc_t *desc
 {
     vres_page_lock_t *lock = (vres_page_lock_t *)malloc(sizeof(vres_page_lock_t));
 
-    if (!lock)
-        return NULL;
-
-    lock->count = 0;
-    memcpy(&lock->desc, desc, sizeof(vres_page_lock_desc_t));
-    pthread_mutex_init(&lock->mutex, NULL);
-    pthread_cond_init(&lock->cond, NULL);
+    if (lock) {
+        lock->count = 0;
+        memcpy(&lock->desc, desc, sizeof(vres_page_lock_desc_t));
+        pthread_mutex_init(&lock->mutex, NULL);
+        pthread_cond_init(&lock->cond, NULL);
+    }
     return lock;
 }
 
@@ -125,7 +123,6 @@ static int vres_page_lock(vres_t *resource)
 
     if (!(vres_page_lock_stat & VRES_STAT_INIT))
         return -EINVAL;
-
     lock = vres_page_lock_get(resource);
     if (!lock) {
         log_resource_err(resource, "no entry");
@@ -209,7 +206,6 @@ int vres_page_update(vres_page_t *page, char *buf)
 
     for (i = 0; i < VRES_LINE_MAX; i++)
         digest[i] = vres_line_get_digest(&buf[i * VRES_LINE_SIZE]);
-
     for (i = 0; i < VRES_LINE_MAX; i++) {
         j = i * VRES_LINE_SIZE;
         if (page->digest[i] != digest[i]) {
@@ -230,7 +226,6 @@ int vres_page_update(vres_page_t *page, char *buf)
         for (i = VRES_PAGE_NR_VERSIONS - 1; i > 0; i--)
             for (j = 0; j < VRES_LINE_MAX; j++)
                 page->diff[i][j] |= page->diff[i - 1][j] | diff[j];
-
         for (j = 0; j < VRES_LINE_MAX; j++) {
             page->diff[0][j] = diff[j];
             page->digest[j] = digest[j];
@@ -293,7 +288,6 @@ void vres_page_update_candidates(vres_t *resource, vres_page_t *page, vres_id_t 
             if (cand[total - 1].count > 0)
                 for (j = 0; j < total; j++)
                     cand[j].count--;
-
             if (0 == cand[total - 1].count) {
                 for (j = total - 1; j > 0; j--)
                     if (cand[j - 1].count > 0)
@@ -320,7 +314,6 @@ int vres_page_get_diff(vres_page_t *page, vres_version_t version, int *diff)
         interval = page->version - version;
     else
         return -EINVAL;
-
     if (0 == interval)
         memset(diff, 0, size);
     else if (interval <= VRES_PAGE_NR_VERSIONS)
@@ -390,7 +383,6 @@ int vres_page_update_holder_list(vres_t *resource, vres_page_t *page, vres_id_t 
 
     if (nr_holders > 0)
         memcpy(&page->holders[page->nr_holders], holders, nr_holders * sizeof(vres_id_t));
-
     if (nr_silent_holders > 0) {
         vres_file_t *filp;
         char path[VRES_PATH_MAX];
@@ -468,7 +460,6 @@ static int vres_page_wrprotect(vres_t *resource, vres_page_t *page, int pid)
 
     if (!vres_pg_active(page) || !vres_pg_write(page))
         return 0;
-
     buf = malloc(PAGE_SIZE);
     if (!buf) {
         log_resource_err(resource, "no memory");
@@ -499,13 +490,12 @@ static int vres_page_rdprotect(vres_t *resource, vres_page_t *page, int pid)
 {
     int ret = 0;
     char *buf = NULL;
+    vres_key_t key = resource->key;
 
     if (!vres_pg_active(page) || !vres_pg_access(page))
         return 0;
-
     if (vres_pg_wait(page))
         goto protect;
-
     if (vres_pg_write(page)) {
         buf = malloc(PAGE_SIZE);
         if (!buf) {
@@ -513,7 +503,7 @@ static int vres_page_rdprotect(vres_t *resource, vres_page_t *page, int pid)
             return -ENOMEM;
         }
     }
-    ret = sys_shm_rdprotect(resource->key, pid, vres_get_off(resource), buf);
+    ret = sys_shm_rdprotect(key, pid, vres_get_off(resource), buf);
     if (ret) {
         if (ENOENT == errno) {
             ret = 0;
@@ -551,10 +541,48 @@ int vres_page_protect(vres_t *resource, vres_page_t *page)
         log_resource_err(resource, "failed to get pid (ret=%s)", log_get_err(ret));
         return -EINVAL;
     }
+#ifdef ENABLE_LASY_PAGE_CHECK
+    if (vres_pg_active(page)) {
+        ret = vres_page_check(resource, page, -1, VRES_RDONLY);
+        if (ret) {
+            log_resource_err(resource, "failed to check page");
+            return ret;
+        }
+    } else
+        return 0;
+#endif
     if (flags & VRES_RDONLY)
         return vres_page_wrprotect(resource, page, desc.id);
     else if (flags & VRES_RDWR)
         return vres_page_rdprotect(resource, page, desc.id);
     else
         return 0;
+}
+
+
+int vres_page_check(vres_t *resource, vres_page_t *page, int retry, int flags)
+{
+    int ret;
+    bool present;
+    int cnt = retry;
+    vres_desc_t desc;
+    vres_key_t key = resource->key;
+    unsigned long off = vres_get_off(resource);
+
+    if (!vres_pg_present(page)) {
+        ret = vres_get_peer(resource->owner, &desc);
+        if (ret) {
+            log_resource_err(resource, "failed to get pid (ret=%s)", log_get_err(ret));
+            return -EINVAL;
+        }
+        do {
+            vres_sleep(VRES_PAGE_CHECK_INTV);
+            present = sys_shm_present(key, desc.id, off, flags);
+            if (cnt >= 0)
+                cnt--;
+        } while (!present && (cnt != 0));
+        if (present)
+            vres_pg_mkpresent(page);
+    }
+    return 0;
 }

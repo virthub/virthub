@@ -10,6 +10,7 @@
 #include <sys/ioctl.h>
 #include <netinet/in.h>
 #include "log.h"
+#include "redo.h"
 #include "file.h"
 #include "node.h"
 #include "lock.h"
@@ -27,9 +28,9 @@
 
 #ifdef SHOW_RESOURCE
 #define LOG_RESOURCE_LOOKUP
+#define LOG_RESOURCE_GET_PEER
 
 #ifdef SHOW_MORE
-#define LOG_RESOURCE_GET_PEER
 #define LOG_RESOURCE_SAVE_PEER
 #endif
 #endif
@@ -38,8 +39,8 @@
 
 bool vres_has_task(vres_id_t id);
 int vres_flush(vres_t *resource);
-int vres_create(vres_t *resource);
 int vres_remove(vres_t *resource);
+bool vres_create(vres_t *resource);
 int vres_destroy(vres_t *resource);
 bool vres_exists(vres_t *resource);
 bool vres_is_owner(vres_t *resource);

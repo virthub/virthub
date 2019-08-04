@@ -49,6 +49,8 @@ int vres_dmgr_get_peers(vres_t *resource, vres_page_t *page, vres_peers_t *peers
             return -EINVAL;
         }
     }
+    if (flags & VRES_RDWR)
+        vres_pg_mkcand(page);
     return 0;
 }
 
@@ -83,7 +85,7 @@ int vres_dmgr_check_resource(vres_t *resource)
     if (!vres_file_is_dir(path)) {
         if (VRES_CLS_SHM == resource->cls) {
             vres_mkdir(resource);
-#ifdef CHECK_PRIORITY
+#ifdef ENABLE_PRIORITY
             vres_prio_create(resource, true);
 #endif
             vres_dmgr_create(resource);
@@ -109,22 +111,9 @@ int vres_dmgr_forward(vres_page_t *page, vres_req_t *req)
         log_dmgr_forward(resource, "forward to *%d*", page->owner);
         return ret;
     } else {
-        log_dmgr_forward(resource, "*cannot forward* (no owner)");
+        log_dmgr_forward(resource, "*cannot* forward (no owner)");
         return -EAGAIN;
     }
-}
-
-
-int vres_dmgr_update_owner(vres_page_t *page, vres_req_t *req)
-{
-    vres_t *resource = &req->resource;
-    int flags = vres_get_flags(resource);
-
-    if (flags & VRES_CHOWN) {
-        page->owner = vres_get_id(resource);
-        log_dmgr_update_owner(resource, "new_owner=%d", vres_get_id(resource));
-    }
-    return 0;
 }
 
 
@@ -139,6 +128,18 @@ bool vres_dmgr_check_sched(vres_t *resource, vres_page_t *page)
 }
 
 
+int vres_dmgr_update_owner(vres_t *resource, vres_page_t *page)
+{
+    int flags = vres_get_flags(resource);
+
+    if (flags & VRES_RDWR) {
+        page->owner = vres_get_id(resource);
+        log_dmgr_update_owner(resource, ">> owner=%d <<", vres_get_id(resource));
+    }
+    return 0;
+}
+
+
 int vres_dmgr_change_owner(vres_page_t *page, vres_req_t *req)
 {
     vres_t *resource = &req->resource;
@@ -146,7 +147,13 @@ int vres_dmgr_change_owner(vres_page_t *page, vres_req_t *req)
 
     if (flags & VRES_RDWR) {
         vres_set_flags(resource, VRES_CHOWN);
-        log_dmgr_change_owner(resource, "new_owner=%d", vres_get_id(resource));
+        log_dmgr_change_owner(resource, ">> owner=%d <<", vres_get_id(resource));
     }
     return 0;
+}
+
+
+bool vres_dmgr_page_own(vres_page_t *page)
+{
+    return vres_pg_cand(page);
 }

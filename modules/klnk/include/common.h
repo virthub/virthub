@@ -6,6 +6,7 @@
 typedef struct rb_tree rbtree_t;
 typedef struct rb_tree_node rbtree_node_t;
 
+#define addr2str(addr) inet_ntoa(addr)
 #define max(a, b) ((a) > (b) ? (a) : (b))
 #define min(a, b) ((a) < (b) ? (a) : (b))
 #define tree_entry list_entry

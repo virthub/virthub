@@ -26,12 +26,11 @@ void klnk_mutex_init()
 
     if (mutex_stat)
         return;
-
     for (i = 0; i < KLNK_MUTEX_GROUP_SIZE; i++) {
         pthread_mutex_init(&mutex_group[i].mutex, NULL);
         rbtree_new(&mutex_group[i].tree, klnk_mutex_compare);
     }
-    mutex_stat = 1;
+    mutex_stat = VRES_STAT_INIT;
 }
 
 
@@ -60,13 +59,12 @@ static inline klnk_mutex_t *klnk_mutex_alloc(klnk_mutex_desc_t *desc)
 {
     klnk_mutex_t *mutex = (klnk_mutex_t *)malloc(sizeof(klnk_mutex_t));
 
-    if (!mutex)
-        return NULL;
-
-    mutex->count = 0;
-    memcpy(&mutex->desc, desc, sizeof(klnk_mutex_desc_t));
-    pthread_mutex_init(&mutex->mutex, NULL);
-    pthread_cond_init(&mutex->cond, NULL);
+    if (mutex) {
+        mutex->count = 0;
+        memcpy(&mutex->desc, desc, sizeof(klnk_mutex_desc_t));
+        pthread_mutex_init(&mutex->mutex, NULL);
+        pthread_cond_init(&mutex->cond, NULL);
+    }
     return mutex;
 }
 
@@ -129,11 +127,9 @@ int klnk_mutex_lock(vres_t *resource)
         log_err("invalid state");
         return -EINVAL;
     }
-
     mutex = klnk_mutex_get(resource);
     if (!mutex)
         return -ENOENT;
-
     if (mutex->count > 1)
         pthread_cond_wait(&mutex->cond, &mutex->mutex);
     pthread_mutex_unlock(&mutex->mutex);
@@ -143,8 +139,8 @@ int klnk_mutex_lock(vres_t *resource)
 
 void klnk_mutex_unlock(vres_t *resource)
 {
-    int release = 0;
     klnk_mutex_t *mutex;
+    bool release = false;
     klnk_mutex_desc_t desc;
     klnk_mutex_group_t *grp;
 
@@ -166,7 +162,7 @@ void klnk_mutex_unlock(vres_t *resource)
         if (mutex->count > 0)
             pthread_cond_signal(&mutex->cond);
         else
-            release = 1;
+            release = true;
     }
     pthread_mutex_unlock(&mutex->mutex);
     if (release)

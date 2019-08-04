@@ -5,7 +5,7 @@
 #include "log.h"
 
 #ifdef LOG_NODE_INIT
-#define log_node_init(path) log_debug("path=%s", path)
+#define log_node_init(path) log_func("path=%s", path)
 #else
 #define log_node_init(...) do {} while (0)
 #endif
@@ -23,7 +23,7 @@
 #endif
 
 #ifdef LOG_NODE_UPDATE
-#define log_node_update(path) log_debug("path=%s", path)
+#define log_node_update(path) log_func("path=%s", path)
 #else
 #define log_node_update(...) do {} while (0)
 #endif

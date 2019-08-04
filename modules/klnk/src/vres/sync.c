@@ -29,15 +29,20 @@ vres_reply_t *vres_sync(vres_req_t *req, int flags)
 {
     int ret = 0;
     vres_reply_t *reply = NULL;
+    vres_t *resource = &req->resource;
 
-    vres_create_reply(vres_sync_result_t, ret, reply);
+    reply = vres_reply_alloc(sizeof(vres_sync_result_t));
+    log_sync(resource, reply);
     if (reply) {
-        vres_sync_result_t *result;
+        vres_sync_result_t *result = vres_result_check(reply, vres_sync_result_t);
 
-        result = vres_result_check(reply, vres_sync_result_t);
+        result->retval = 0;
         result->time = vres_get_time();
+        return reply;
+    } else {
+        log_resource_err(resource, "failed to sync");
+        return vres_reply_err(-ENOMEM);
     }
-    return reply;
 }
 
 

@@ -6,6 +6,7 @@
  */
 
 #include "log.h"
+#include <vres.h>
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
@@ -13,7 +14,7 @@
 #include <stdbool.h>
 
 #define OP_MAX      64
-#define FLG_MAX     23
+#define FLG_MAX     24
 #define OP_LEN      32
 #define CMD_LEN     32
 #define SHM_CMD_MAX 7
@@ -70,36 +71,41 @@ char flg_list[FLG_MAX][32] = {
     "rd",       // RDONLY         (0x00000001)
     "rw",       // RDWR           (0x00000002)
     "creat",    // CREATE         (0x00000004)
-    "none",     //                (0x00000008)
-    "own",      // OWN            (0x00000010)
-    "cand",     // CANDIDATE      (0x00000020)
-    "redo",     // REDO           (0x00000040)
-    "cancel",   // CANCEL         (0x00000080)
-    "prio",     // PRIORITY       (0x00000100)
-    "diff",     // DIFFERENTIATE  (0x00000200)
-    "crit",     // CRITICAL       (0x00000400)
+    "own",      // OWN            (0x00000008)
+    "cand",     // CANDIDATE      (0x00000010)
+    "cancel",   // CANCEL         (0x00000020)
+    "diff",     // DIFFERENTIATE  (0x00000040)
+    "crit",     // CRITICAL       (0x00000080)
+    "redo",     // REDO           (0x00000100)
+    "prio",     // PRIORITIZE     (0x00000200)
+    "none",     //                (0x00000400)
     "none",     //                (0x00000800)
     "none",     //                (0x00001000)
     "none",     //                (0x00002000)
     "none",     //                (0x00004000)
-    "none",     //                (0x00008800)
+    "none",     //                (0x00008000)
     "ready",    // READY          (0x00010000)
     "active",   // ACTIVE         (0x00020000)
     "wait",     // WAIT           (0x00040000)
     "update",   // UPDATE         (0x00080000)
     "excl",     // EXCLUSIVE      (0x00100000)
-    "curr",     // CURRENT        (0x00200000)
-    "save"};    // SAVE           (0x00400000)
+    "cmpl",     // COMPLETE       (0x00200000)
+    "save",     // SAVE           (0x00400000)
+    "present"   // PRESENT        (0x00800000)
+};
 
-char eio[32]    = "EIO";
-char eperm[32]  = "EPERM";
-char eexist[32] = "EEXIST";
-char eagain[32] = "EAGAIN";
-char einval[32] = "EINVAL";
-char enoent[32] = "ENOENT";
-char efault[32] = "EFAULT";
-char enomem[32] = "ENOMEM";
-char eacces[32] = "EACCES";
+char eok[32]      = "EOK";
+char eio[32]      = "EIO";
+char ermid[32]    = "ERMID";
+char eperm[32]    = "EPERM";
+char eexist[32]   = "EEXIST";
+char eagain[32]   = "EAGAIN";
+char einval[32]   = "EINVAL";
+char enoent[32]   = "ENOENT";
+char efault[32]   = "EFAULT";
+char enomem[32]   = "ENOMEM";
+char eacces[32]   = "EACCES";
+char enoowner[32] = "ENOOWNER";
 
 char *log_get_op(int op)
 {
@@ -125,27 +131,31 @@ char *log_get_err(int err)
     char *p = NULL;
     static int cnt = 0;
 
-    if (val < 0)
-        val = -val;
     switch (val) {
-    case EIO:
+    case -EOK:
+        return eok;
+    case -EIO:
         return eio;
-    case EPERM:
+    case -ERMID:
+        return ermid;
+    case -EPERM:
         return eperm;
-    case EEXIST:
+    case -EEXIST:
         return eexist;
-    case EINVAL:
+    case -EINVAL:
         return einval;
-    case ENOENT:
+    case -ENOENT:
         return enoent;
-    case EFAULT:
+    case -EFAULT:
         return efault;
-    case ENOMEM:
+    case -ENOMEM:
         return enomem;
-    case EAGAIN:
+    case -EAGAIN:
         return eagain;
-    case EACCES:
+    case -EACCES:
         return eacces;
+    case -ENOOWNER:
+        return enoowner;
     default:
         p = errnum[cnt++];
         if (ERR_ENT_MAX == cnt)

@@ -1,9 +1,10 @@
 #ifndef _RECORD_H
 #define _RECORD_H
 
-#include "file.h"
-#include "trace.h"
+#include <common.h>
 #include "resource.h"
+#include "trace.h"
+#include "file.h"
 
 #define VRES_RECORD_NEW    0x00000001
 #define VRES_RECORD_FREE   0x00000002
@@ -11,6 +12,8 @@
 
 #ifdef SHOW_RECORD
 #define LOG_RECORD_SAVE
+#define LOG_RECORD_REMOVE
+#define LOG_RECORD_CHECK_EMPTY
 #endif
 
 #include "log_record.h"
@@ -24,10 +27,9 @@ typedef struct vres_record {
     vres_req_t *req;
 } vres_record_t;
 
-int vres_record_empty_check(char *path);
 void vres_record_put(vres_record_t *record);
 int vres_record_next(char *path, vres_index_t *index);
-int vres_record_first(char *path, vres_index_t *index);
+int vres_record_head(char *path, vres_index_t *index);
 int vres_record_remove(char *path, vres_index_t index);
 int vres_record_save(char *path, vres_req_t *req, vres_index_t *index);
 int vres_record_get(char *path, vres_index_t index, vres_record_t *record);

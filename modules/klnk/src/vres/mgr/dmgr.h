@@ -12,10 +12,11 @@
 #include "log_dmgr.h"
 
 bool vres_dmgr_is_owner(vres_t *resource);
+bool vres_dmgr_page_own(vres_page_t *page);
 int vres_dmgr_check_resource(vres_t *resource);
 int vres_dmgr_forward(vres_page_t *page, vres_req_t *req);
-int vres_dmgr_update_owner(vres_page_t *page, vres_req_t *req);
 int vres_dmgr_change_owner(vres_page_t *page, vres_req_t *req);
+int vres_dmgr_update_owner(vres_t *resource, vres_page_t *page);
 bool vres_dmgr_check_sched(vres_t *resource, vres_page_t *page);
 int vres_dmgr_get_peers(vres_t *resource, vres_page_t *page, vres_peers_t *peers);
 

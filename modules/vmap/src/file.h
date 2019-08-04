@@ -8,7 +8,6 @@
 #include <unistd.h>
 #include <string.h>
 #include <sys/ioctl.h>
-
 #include "util.h"
 
 #define VMAP_RDONLY O_RDONLY

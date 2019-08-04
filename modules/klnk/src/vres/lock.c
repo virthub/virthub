@@ -26,7 +26,6 @@ void vres_lock_init()
 
     if (lock_stat & VRES_STAT_INIT)
         return;
-
     for (i = 0; i < VRES_LOCK_GROUP_SIZE; i++) {
         pthread_mutex_init(&lock_group[i].mutex, NULL);
         rbtree_new(&lock_group[i].tree, vres_lock_compare);
@@ -39,7 +38,7 @@ static inline unsigned long vres_lock_hash(vres_lock_desc_t *desc)
 {
     vres_lock_entry_t *ent = desc->entry;
 
-    assert(VRES_LOCK_ENTRY_SIZE);
+    assert(VRES_LOCK_ENTRY_SIZE == 4);
     return (ent[0] ^ ent[1] ^ ent[2] ^ ent[3]) % VRES_LOCK_GROUP_SIZE;
 }
 
@@ -62,14 +61,14 @@ static inline vres_lock_t *vres_lock_alloc(vres_lock_desc_t *desc)
 {
     vres_lock_t *lock = (vres_lock_t *)malloc(sizeof(vres_lock_t));
 
-    if (!lock)
-        return NULL;
-
-    lock->count = 0;
-    memcpy(&lock->desc, desc, sizeof(vres_lock_desc_t));
-    pthread_mutex_init(&lock->mutex, NULL);
-    pthread_cond_init(&lock->cond, NULL);
-    INIT_LIST_HEAD(&lock->list);
+    if (lock) {
+        lock->count = 0;
+        lock->grp = NULL;
+        memcpy(&lock->desc, desc, sizeof(vres_lock_desc_t));
+        pthread_mutex_init(&lock->mutex, NULL);
+        pthread_cond_init(&lock->cond, NULL);
+        INIT_LIST_HEAD(&lock->list);
+    }
     return lock;
 }
 
@@ -87,11 +86,12 @@ static inline vres_lock_t *vres_lock_lookup(vres_lock_group_t *group, vres_lock_
 
 static inline void vres_lock_insert(vres_lock_group_t *group, vres_lock_t *lock)
 {
+    lock->grp = group;
     rbtree_insert(&group->tree, &lock->desc, &lock->node);
 }
 
 
-static inline vres_lock_t *vres_lock_get(vres_t *resource)
+static inline vres_lock_t *vres_lock_get(vres_t *resource, vres_lock_list_t *list)
 {
     vres_lock_desc_t desc;
     vres_lock_group_t *grp;
@@ -107,10 +107,45 @@ static inline vres_lock_t *vres_lock_get(vres_t *resource)
             log_resource_err(resource, "no memory");
             goto out;
         }
+        lock->count = 1;
+        list_add_tail(&list->list, &lock->list);
         vres_lock_insert(grp, lock);
+    } else {
+        pthread_mutex_lock(&lock->mutex);
+        lock->count++;
+        list_add_tail(&list->list, &lock->list);
+        pthread_mutex_unlock(&lock->mutex);
     }
-    pthread_mutex_lock(&lock->mutex);
-    lock->count++;
+out:
+    pthread_mutex_unlock(&grp->mutex);
+    return lock;
+}
+
+
+static inline vres_lock_t *vres_lock_get_lock(vres_t *resource)
+{
+    vres_lock_desc_t desc;
+    vres_lock_group_t *grp;
+    vres_lock_t *lock = NULL;
+    pthread_t tid = pthread_self();
+
+    vres_lock_get_desc(resource, &desc);
+    grp = &lock_group[vres_lock_hash(&desc)];
+    pthread_mutex_lock(&grp->mutex);
+    lock = vres_lock_lookup(grp, &desc);
+    if (!lock) {
+        lock = vres_lock_alloc(&desc);
+        if (!lock) {
+            log_resource_err(resource, "no memory");
+            goto out;
+        }
+        vres_lock_insert(grp, lock);
+        pthread_mutex_lock(&lock->mutex);
+        lock->count = 1;
+    } else {
+        pthread_mutex_lock(&lock->mutex);
+        lock->count++;
+    }
 out:
     pthread_mutex_unlock(&grp->mutex);
     return lock;
@@ -129,51 +164,72 @@ static inline void vres_lock_free(vres_lock_group_t *group, vres_lock_t *lock)
 vres_lock_t *vres_lock_top(vres_t *resource)
 {
     vres_lock_t *lock;
+    vres_lock_list_t *list;
+    pthread_t tid = pthread_self();
 
     if (!(lock_stat & VRES_STAT_INIT)) {
         log_err("invalid state");
         return NULL;
     }
     log_lock_top(resource);
-    lock = vres_lock_get(resource);
+    list = malloc(sizeof(vres_lock_list_t));
+    if (!list) {
+        log_resource_err(resource, "no memory");
+        return NULL;
+    }
+    list->tid = tid;
+    lock = vres_lock_get(resource, list);
+    if (!lock)
+        free(list);
     return lock;
 }
 
 
 void vres_unlock_top(vres_lock_t *lock)
 {
-    if (lock->count > 0)
-        lock->count--;
+    vres_lock_list_t *list;
+    pthread_t tid = pthread_self();
+    vres_lock_group_t *grp = lock->grp;
+
+    pthread_mutex_lock(&grp->mutex);
+    pthread_mutex_lock(&lock->mutex);
+    list_for_each_entry(list, &lock->list, list) {
+        if (list->tid == tid) {
+            list_del(&list->list);
+            lock->count--;
+            free(list);
+            break;
+        }
+    }
+    if (!lock->count)
+        vres_lock_free(grp, lock);
     pthread_mutex_unlock(&lock->mutex);
+    pthread_mutex_unlock(&grp->mutex);
 }
 
 
 int vres_lock_buttom(vres_lock_t *lock)
 {
-    vres_lock_list_t *list;
+    int ret = -ENOENT;
     pthread_t tid = pthread_self();
 
     if (!(lock_stat & VRES_STAT_INIT)) {
         log_err("invalid state");
         return -EINVAL;
     }
-    list = malloc(sizeof(vres_lock_list_t));
-    if (!list) {
-        log_err("no memory");
-        return -ENOMEM;
-    }
-    list->tid = tid;
-    list_add_tail(&list->list, &lock->list);
-    if (lock->count > 1) {
-        vres_lock_list_t *curr;
+    pthread_mutex_lock(&lock->mutex);
+    while (!list_empty(&lock->list)) {
+        vres_lock_list_t *list = list_entry(lock->list.next, vres_lock_list_t, list);
 
-        do {
+        if (list->tid != tid)
             pthread_cond_wait(&lock->cond, &lock->mutex);
-            curr = list_entry(lock->list.next, vres_lock_list_t, list);
-        } while (curr->tid != tid);
+        else {
+            ret = 0;
+            break;
+        }
     }
     pthread_mutex_unlock(&lock->mutex);
-    return 0;
+    return ret;
 }
 
 
@@ -186,7 +242,7 @@ int vres_lock(vres_t *resource)
         log_err("invalid state");
         return -EINVAL;
     }
-    lock = vres_lock_get(resource);
+    lock = vres_lock_get_lock(resource);
     if (!lock) {
         log_resource_err(resource, "no entry");
         return -ENOENT;
@@ -208,12 +264,12 @@ int vres_lock_timeout(vres_t *resource, vres_time_t timeout)
         log_err("invalid state");
         return -EINVAL;
     }
-    lock = vres_lock_get(resource);
+    log_lock_timeout(resource);
+    lock = vres_lock_get_lock(resource);
     if (!lock) {
         log_resource_err(resource, "no entry");
         return -ENOENT;
     }
-    log_lock_timeout(resource);
     if (lock->count > 1) {
         struct timespec time;
 
@@ -227,10 +283,10 @@ int vres_lock_timeout(vres_t *resource, vres_time_t timeout)
 }
 
 
-void vres_unlock(vres_t *resource)
+void vres_unlock(vres_t *resource, vres_lock_t *lock)
 {
-    vres_lock_t *lock;
-    bool empty = false;
+    bool release = false;
+    bool has_desc = false;
     vres_lock_desc_t desc;
     vres_lock_group_t *grp;
 
@@ -238,13 +294,22 @@ void vres_unlock(vres_t *resource)
         log_err("invalid state");
         return;
     }
-    vres_lock_get_desc(resource, &desc);
-    grp = &lock_group[vres_lock_hash(&desc)];
+    if (lock)
+        grp = lock->grp;
+    if (!grp) {
+        has_desc = true;
+        vres_lock_get_desc(resource, &desc);
+        grp = &lock_group[vres_lock_hash(&desc)];
+    }
     pthread_mutex_lock(&grp->mutex);
-    lock = vres_lock_lookup(grp, &desc);
     if (!lock) {
-        log_resource_err(resource, "cannot find the lock");
-        goto out;
+        if (!has_desc)
+            vres_lock_get_desc(resource, &desc);
+        lock = vres_lock_lookup(grp, &desc);
+        if (!lock) {
+            log_resource_err(resource, "no lock");
+            goto out;
+        }
     }
     pthread_mutex_lock(&lock->mutex);
     if (lock->count > 0) {
@@ -255,22 +320,22 @@ void vres_unlock(vres_t *resource)
             else
                 pthread_cond_broadcast(&lock->cond);
         } else
-            empty = true;
+            release = true;
         if (!list_empty(&lock->list)) {
-            vres_lock_list_t *curr = list_entry(lock->list.next, vres_lock_list_t, list);
+            pthread_t tid = pthread_self();
+            vres_lock_list_t *list = list_entry(lock->list.next, vres_lock_list_t, list);
 
-            if (pthread_self() == curr->tid) {
-                list_del(&curr->list);
-                free(curr);
+            if (tid == list->tid) {
+                list_del(&list->list);
+                free(list);
+                if (release && !list_empty(&lock->list))
+                    log_resource_err(resource, "failed to release");
             } else
-                log_err("found a mismatched lock (tid=%lx)", pthread_self());
-
-            if (empty && !list_empty(&lock->list))
-                log_err("failed to clear lock list");
+                log_resource_err(resource, "invalid lock");
         }
     }
     pthread_mutex_unlock(&lock->mutex);
-    if (empty)
+    if (release)
         vres_lock_free(grp, lock);
 out:
     pthread_mutex_unlock(&grp->mutex);

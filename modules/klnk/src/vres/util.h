@@ -31,7 +31,6 @@
 #define vres_set_err(p, err) do { (p)->length = err; } while (0)
 #define vres_is_generic_err(err) ((err) > -VRES_ERRNO_MAX && (err) < 0)
 
-#define vres_addr2str(addr) inet_ntoa(addr)
 #define vres_result_check(p, type) (type *)((p)->buf)
 #define vres_get_reply_owner(resource) ((resource)->key)
 
@@ -65,6 +64,7 @@ bool vres_is_sync(vres_op_t op);
 bool vres_is_local(vres_op_t op);
 
 bool vres_need_lock(vres_t *resource);
+bool vres_need_reply(vres_t *resource);
 bool vres_need_wrlock(vres_t *resource);
 bool vres_need_half_lock(vres_t *resource);
 bool vres_need_timed_lock(vres_t *resource);

@@ -10,13 +10,13 @@
 #endif
 
 #ifdef LOG_TSK_RESUME
-#define log_tsk_resume(id) log_debug("id=%d", id)
+#define log_tsk_resume(id) log_func("id=%d", id)
 #else
 #define log_tsk_resume(...) do {} while(0)
 #endif
 
 #ifdef LOG_TSK_SUSPEND
-#define log_tsk_suspend(id) log_debug("id=%d", id)
+#define log_tsk_suspend(id) log_func("id=%d", id)
 #else
 #define log_tsk_suspend(...) do {} while(0)
 #endif
@@ -28,7 +28,7 @@
 #endif
 
 #ifdef LOG_TSK_WAKEUP
-#define log_tsk_wakeup(cmd) log_debug("cmd=%s", cmd)
+#define log_tsk_wakeup(cmd) log_func("cmd=%s", cmd)
 #else
 #define log_tsk_wakeup(...) do {} while(0)
 #endif

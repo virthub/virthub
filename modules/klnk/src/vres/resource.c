@@ -15,6 +15,7 @@
 
 void vres_init()
 {
+    vres_shm_init();
     vres_member_init();
     vres_file_init();
 #ifdef NODE
@@ -26,7 +27,6 @@ void vres_init()
     vres_page_lock_init();
     vres_cache_init();
     vres_prio_init();
-    vres_barrier_init();
     vres_ckpt_init();
     vres_metadata_init();
 }
@@ -106,7 +106,7 @@ int vres_save_peer(vres_id_t id, vres_desc_t *peer)
     }
     res.key = id;
     res.cls = VRES_CLS_TSK;
-    log_resource_save_peer(&res, "addr=%s, pid=%d (gpid=%d)", vres_addr2str(peer->address), peer->id, id);
+    log_resource_save_peer(&res, "addr=%s, pid=%d (gpid=%d)", addr2str(peer->address), peer->id, id);
     return vres_cache_write(&res, (char *)peer, sizeof(vres_desc_t));
 }
 
@@ -120,9 +120,9 @@ int vres_get_peer(vres_id_t id, vres_desc_t *peer)
     res.cls = VRES_CLS_TSK;
     ret = vres_lookup(&res, peer);
     if (!ret)
-        log_resource_get_peer(&res, "addr=%s, pid=%d (gpid=%d)", vres_addr2str(peer->address), peer->id, id);
+        log_resource_get_peer(&res, "id=%d (peer_id=%d), addr=%s", id, peer->id, addr2str(peer->address));
     else
-        log_err("failed to get task, gpid=%d", id);
+        log_err("failed to find peer, id=%d", id);
     return ret;
 }
 
@@ -136,15 +136,15 @@ int vres_lookup(vres_t *resource, vres_desc_t *desc)
         if (!ret) {
             ret = vres_cache_write(resource, (char *)desc, sizeof(vres_desc_t));
             if (!ret)
-                log_resource_lookup(resource, "find from mds, addr=%s", vres_addr2str(desc->address));
+                log_resource_lookup(resource, "save result, addr=%s", addr2str(desc->address));
             else
-                log_resource_err(resource, "failed to update cache");
-        }
+                log_resource_err(resource, "failed to save, ret=%s", log_get_err(ret));
+        } else
+            log_resource_err(resource, "failed to find, ret=%s", log_get_err(ret));
     } else if (!ret)
-        log_resource_lookup(resource, "find from cache, addr=%s", vres_addr2str(desc->address));
+        log_resource_lookup(resource, "addr=%s", addr2str(desc->address));
     else if (ret)
-        log_resource_err(resource, "failed to read cache");
-
+        log_resource_err(resource, "failed to read, ret=%s", log_get_err(ret));
     return ret;
 }
 
@@ -165,18 +165,18 @@ void vres_get_desc(vres_t *resource, vres_desc_t *desc)
 }
 
 
-int vres_create(vres_t *resource)
+bool vres_create(vres_t *resource)
 {
-    int ret;
     vres_desc_t desc;
     char path[VRES_PATH_MAX] = {0};
 
     vres_get_desc(resource, &desc);
     vres_get_key_path(resource, path);
-    ret = vres_metadata_create(path, (char *)&desc, sizeof(vres_desc_t));
-    if (!ret)
-        ret = vres_cache_write(resource, (char *)&desc, sizeof(vres_desc_t));
-    return ret;
+    if (vres_metadata_create(path, (char *)&desc, sizeof(vres_desc_t))) {
+        vres_cache_write(resource, (char *)&desc, sizeof(vres_desc_t));
+        return true;
+    } else
+        return false;
 }
 
 

@@ -88,7 +88,6 @@ static inline int klnk_create()
 
 int klnk_create_manager(vres_id_t id)
 {
-    int ret;
     vres_t res;
     vres_t *pres = &res;
 
@@ -99,9 +98,8 @@ int klnk_create_manager(vres_id_t id)
     vres_set_id(pres, id);
     if (vres_exists(pres))
         vres_flush(pres);
-    ret = vres_create(pres);
-    if (ret)
-        return ret;
+    if (!vres_create(pres))
+        return -EEXIST;
     else
         return vres_mkdir(pres);
 }
@@ -211,8 +209,9 @@ static inline int klnk_init(char *addr)
         log_err("failed to create");
         return ret;
     }
-    klnk_mutex_init();
     vres_init();
+    klnk_mutex_init();
+    klnk_barrier_init();
     ret = klnk_load_conf();
     if (ret) {
         log_err("failed to load conf");
@@ -240,17 +239,58 @@ int klnk_getattr(const char *path, struct stat *stbuf)
 inline bool klnk_check_bypass(vres_t *resource)
 {
     switch (vres_get_op(resource)) {
-#ifdef DISABLE_PGSAVE
+#ifndef ENABLE_PGSAVE
     case VRES_OP_PGSAVE:
         return true;
 #endif
-#ifdef DISABLE_TSKPUT
+#ifndef ENABLE_TSKPUT
     case VRES_OP_TSKPUT:
         return true;
 #endif
     default:
         return false;
     }
+}
+
+
+int klnk_parse(const char *path, vres_t *resource, unsigned long *addr, size_t *inlen, size_t *outlen)
+{
+    int i;
+    char *pend;
+    const char *ptr = path;
+
+    if (*ptr++ != '/')
+        return -EINVAL;
+    resource->cls = (vres_cls_t)strtoul(ptr, &pend, 16);
+    if (ptr == pend)
+        return -EINVAL;
+    ptr = pend + 1;
+    resource->key = (vres_key_t)strtoul(ptr, &pend, 16);
+    if (ptr == pend)
+        return -EINVAL;
+    for (i = 0; i < 4; i++) {
+        ptr = pend + 1;
+        resource->entry[i] = (vres_entry_t)strtoul(ptr, &pend, 16);
+        if (ptr == pend)
+            return -EINVAL;
+    }
+    if (resource->cls != VRES_CLS_TSK)
+        resource->owner = vres_get_id(resource);
+    else
+        resource->owner = resource->key;
+    ptr = pend + 1;
+    *addr = strtoul(ptr, &pend, 16);
+    if (ptr == pend)
+        return -EINVAL;
+    ptr = pend + 1;
+    *inlen = (size_t)strtoul(ptr, &pend, 16);
+    if (ptr == pend)
+        return -EINVAL;
+    ptr = pend + 1;
+    *outlen = (size_t)strtoul(ptr, &pend, 16);
+    if (ptr == pend)
+        return -EINVAL;
+    return 0;
 }
 
 
@@ -265,10 +305,10 @@ int klnk_open(const char *path, struct fuse_file_info *fi)
     vres_arg_t *parg = &arg;
     vres_t *pres = &resource;
 
-    ret = vres_parse(path, pres, &addr, &inlen, &outlen);
+    ret = klnk_parse(path, pres, &addr, &inlen, &outlen);
     if (ret) {
-        log_err("failed to get resource");
-        goto err;
+        log_err("failed to get resource, ret=%s", log_get_err(ret));
+        return ret;
     }
     if (klnk_check_bypass(pres)) {
         log_klnk_open(pres, "bypass (op=%s)", log_get_op(vres_get_op(pres)));
@@ -276,25 +316,26 @@ int klnk_open(const char *path, struct fuse_file_info *fi)
         return -EOK;
     }
     log_klnk_open(pres, ">-- open (begin) --<");
-    vres_barrier_wait_timeout(pres, VRES_BARRIER_TIMEOUT);
+#ifdef ENABLE_BARRIER
+    klnk_barrier_wait_timeout(pres, KLNK_BARRIER_TIMEOUT);
+#endif
     klnk_mutex_lock(pres);
-    ret = vres_rpc_get(pres, addr, inlen, outlen, parg);
-    if (-EAGAIN == ret) {
-        log_resource_warning(pres, "waiting");
-        goto wait;
-    } else if (ret)
-        goto out;
-    ret = vres_rpc(parg);
+    ret = klnk_rpc_get(pres, addr, inlen, outlen, parg);
     if (ret) {
-        log_resource_err(pres, "failed to invoke rpc, ret=%s", log_get_err(ret));
-        goto out;
+        if (-EAGAIN == ret)
+            goto wait;
+        else
+            goto out;
+    } else {
+        ret = klnk_rpc(parg);
+        if (ret)
+            goto out;
     }
 wait:
-    ret = vres_rpc_wait(parg);
-    vres_rpc_put(parg);
+    ret = klnk_rpc_wait(parg);
+    klnk_rpc_put(parg);
 out:
     klnk_mutex_unlock(pres);
-err:
     if (!vres_can_expose(pres))
         ret = ret ? ret : -EOK;
     log_klnk_open(pres, ">-- open (end, ret=%s) --<", log_get_err(ret));

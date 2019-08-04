@@ -11,22 +11,23 @@
 #define CURSOR_SIZE 32
 
 int metadata_stat = 0;
+pthread_mutex_t metadata_mutex;
 redisContext *metadata_ctx = NULL;
 
 void vres_metadata_init()
 {
     if (metadata_stat & VRES_STAT_INIT)
         return;
-
     metadata_ctx = redisConnect(master_addr, MDS_PORT);
     if (!metadata_ctx || metadata_ctx->err) {
         if (metadata_ctx) {
             log_err("failed to connect, %s", metadata_ctx->errstr);
             redisFree(metadata_ctx);
         } else
-            log_err("no contex");
+            log_err("invalid context");
         exit(1);
     }
+    pthread_mutex_init(&metadata_mutex, NULL);
     metadata_stat |= VRES_STAT_INIT;
 }
 
@@ -42,8 +43,9 @@ inline int vres_metadata_check_path(char *path)
 
 int vres_metadata_read(char *path, char *buf, int len)
 {
-    int ret;
+    int ret = -EINVAL;
     redisReply *reply;
+    int cnt = METADATA_RETRY_MAX;
 
     if (0 == len)
         return 0;
@@ -52,15 +54,23 @@ int vres_metadata_read(char *path, char *buf, int len)
         log_err("invalid path");
         return ret;
     }
-    reply = redisCommand(metadata_ctx, "GET %s", path);
-    if (reply->len == len) {
-        memcpy(buf, reply->str, reply->len);
-        ret = 0;
-    } else {
-        log_err("invalid reply");
-        ret = -EINVAL;
-    }
+    log_metadata_read(path);
+    pthread_mutex_lock(&metadata_mutex);
+    do {
+        reply = redisCommand(metadata_ctx, "GET %s", path);
+        if ((REDIS_REPLY_STRING == reply->type) && (reply->len == len)) {
+            memcpy(buf, reply->str, reply->len);
+            ret = 0;
+            break;
+        } else {
+            cnt--;
+            vres_sleep(METADATA_RETRY_INTV);
+        }
+    } while (cnt > 0);
     freeReplyObject(reply);
+    pthread_mutex_unlock(&metadata_mutex);
+    if (ret)
+        log_err("invalid reply");
     return ret;
 }
 
@@ -77,8 +87,10 @@ int vres_metadata_write(char *path, char *buf, int len)
         log_err("invalid path");
         return ret;
     }
+    pthread_mutex_lock(&metadata_mutex);
     reply = redisCommand(metadata_ctx, "SET %s %b", path, buf, len);
     freeReplyObject(reply);
+    pthread_mutex_unlock(&metadata_mutex);
     return 0;
 }
 
@@ -92,40 +104,27 @@ bool vres_metadata_exists(char *path)
         log_err("invalid path");
         return ret;
     }
+    pthread_mutex_lock(&metadata_mutex);
     reply = redisCommand(metadata_ctx, "EXISTS %s", path);
     if ((REDIS_REPLY_INTEGER == reply->type) && (1 == reply->integer))
         ret = true;
     freeReplyObject(reply);
+    pthread_mutex_unlock(&metadata_mutex);
     return ret;
 }
 
 
-int vres_metadata_create(char *path, char *buf, int len)
+bool vres_metadata_create(char *path, char *buf, int len)
 {
-    int ret;
-    char *tmp = NULL;
+    bool ret = false;
+    redisReply *reply;
 
-    if (vres_metadata_exists(path))
-        return -EEXIST;
-    ret = vres_metadata_write(path, buf, len);
-    if (ret) {
-        log_err("failed to write");
-        return ret;
-    }
-    tmp = (char *)malloc(len);
-    if (!tmp) {
-        log_err("no memory");
-        return -ENOMEM;
-    }
-    ret = vres_metadata_read(path, tmp, len);
-    if (ret) {
-        log_err("failed to read");
-        goto out;
-    }
-    if (memcmp(tmp, buf, len))
-        ret = -EEXIST;
-out:
-    free(tmp);
+    pthread_mutex_lock(&metadata_mutex);
+    reply = redisCommand(metadata_ctx, "SETNX %s %b", path, buf, len);
+    if ((REDIS_REPLY_INTEGER == reply->type) && (1 == reply->integer))
+        ret = true;
+    freeReplyObject(reply);
+    pthread_mutex_unlock(&metadata_mutex);
     return ret;
 }
 
@@ -139,8 +138,10 @@ int vres_metadata_remove(char *path)
         log_err("invalid path");
         return ret;
     }
+    pthread_mutex_lock(&metadata_mutex);
     reply = redisCommand(metadata_ctx, "DEL %s", path);
     freeReplyObject(reply);
+    pthread_mutex_unlock(&metadata_mutex);
     return 0;
 }
 
@@ -157,6 +158,7 @@ int vres_metadata_count(char *path)
         return ret;
     }
     strcpy(cursor, "0");
+    pthread_mutex_lock(&metadata_mutex);
     do {
         reply = redisCommand(metadata_ctx, "SCAN %s MATCH %s/*", cursor, path);
         if (REDIS_REPLY_ARRAY == reply->type) {
@@ -164,18 +166,21 @@ int vres_metadata_count(char *path)
                 strncpy(cursor, reply->element[0]->str, CURSOR_SIZE);
                 count += reply->element[1]->elements;
             } else {
-                log_err("failed to get reply");
+                log_err("invalid reply");
                 freeReplyObject(reply);
-                return -EINVAL;
+                count = -EINVAL;
+                goto out;
             }
         }
         freeReplyObject(reply);
         if (count > CURSOR_MAX) {
             log_err("too much elements");
-            return -EINVAL;
+            count = -EINVAL;
+            goto out;
         }
     } while (strcmp(cursor, "0"));
-
+out:
+    pthread_mutex_unlock(&metadata_mutex);
     return count;
 }
 
@@ -195,6 +200,7 @@ unsigned long vres_metadata_max(char *path)
     }
     off = strlen(path) + 1;
     strcpy(cursor, "0");
+    pthread_mutex_lock(&metadata_mutex);
     do {
         reply = redisCommand(metadata_ctx, "SCAN %s MATCH %s/*", cursor, path);
         if (REDIS_REPLY_ARRAY == reply->type) {
@@ -206,7 +212,8 @@ unsigned long vres_metadata_max(char *path)
                 if (count > CURSOR_MAX) {
                     log_err("too much elements");
                     freeReplyObject(reply);
-                    return 0;
+                    val = 0;
+                    goto out;
                 }
                 for (i = 0; i < elements; i++) {
                     char *end;
@@ -216,19 +223,20 @@ unsigned long vres_metadata_max(char *path)
                     tmp = strtoul(start, &end, 16);
                     if (start == end)
                         continue;
-
                     if (tmp > val)
                         val = tmp;
                 }
                 strncpy(cursor, reply->element[0]->str, CURSOR_SIZE);
             } else {
-                log_err("failed to get reply");
+                log_err("invalid reply");
                 freeReplyObject(reply);
-                return 0;
+                val = 0;
+                goto out;
             }
         }
         freeReplyObject(reply);
     } while (strcmp(cursor, "0"));
-
+out:
+    pthread_mutex_unlock(&metadata_mutex);
     return val;
 }

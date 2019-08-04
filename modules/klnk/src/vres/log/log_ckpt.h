@@ -22,7 +22,7 @@
 #endif
 
 #ifdef LOG_CKPT_CHECK_DIR
-#define log_ckpt_check_dir(path) log_debug("path=%s", path)
+#define log_ckpt_check_dir(path) log_func("path=%s", path)
 #else
 #define log_ckpt_check_dir(...) do {} while (0)
 #endif

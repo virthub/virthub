@@ -61,6 +61,5 @@ int vres_mkdir(vres_t *resource);
 int vres_is_key_path(char *path);
 int vres_get_resource(const char *path, vres_t *resource);
 int vres_path_join(const char *p1, const char *p2, char *path);
-int vres_parse(const char *path, vres_t *resource, unsigned long *addr, size_t *inlen, size_t *outlen);
 
 #endif

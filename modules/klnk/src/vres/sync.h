@@ -5,6 +5,10 @@
 
 #ifdef SHOW_SYNC
 #define LOG_JOIN
+
+#ifdef SHOW_MORE
+#define LOG_SYNC
+#endif
 #endif
 
 #include "log_sync.h"

@@ -10,7 +10,7 @@
 #endif
 
 #ifdef LOG_RESTORE_FILE
-#define log_restore_file(path, len) log_debug("path=%s, len=%d", path, len)
+#define log_restore_file(path, len) log_func("path=%s, len=%d", path, len)
 #else
 #define log_restore_file(...) do {} while (0)
 #endif

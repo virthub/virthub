@@ -14,18 +14,9 @@ int vres_rwlock_compare(const void *val0, const void *val1)
 {
     vres_rwlock_entry_t *ent0 = ((vres_rwlock_desc_t *)val0)->entry;
     vres_rwlock_entry_t *ent1 = ((vres_rwlock_desc_t *)val1)->entry;
+    size_t size = VRES_RWLOCK_ENTRY_SIZE * sizeof(vres_rwlock_entry_t);
 
-    if (ent0[0] > ent1[0])
-        return 1;
-    else if (ent0[0] == ent1[0]) {
-        if (ent0[1] > ent1[1])
-            return 1;
-        else if (ent0[1] == ent1[1])
-            return 0;
-        else
-            return -1;
-    } else
-        return -1;
+    return memcmp(ent0, ent1, size);
 }
 
 
@@ -35,7 +26,6 @@ void vres_rwlock_init()
 
     if (rwlock_stat & VRES_STAT_INIT)
         return;
-
     for (i = 0; i < VRES_RWLOCK_GROUP_SIZE; i++) {
         pthread_mutex_init(&rwlock_group[i].mutex, NULL);
         rbtree_new(&rwlock_group[i].tree, vres_rwlock_compare);
