@@ -1,6 +1,8 @@
 #ifndef _LOG_H
 #define _LOG_H
 
+#include <errno.h>
+
 #define FLAG2STR
 #define LOG_STR_LEN 1024
 

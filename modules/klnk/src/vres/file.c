@@ -17,30 +17,9 @@ int vres_file_mkdir(char *path);
 int vres_file_seek(vres_file_t *filp, long int offset, int origin);
 int vres_file_write(const void *ptr, size_t size, size_t count, vres_file_t *filp);
 
-int vres_file_compare(const void *val0, const void *val1)
+int vres_file_compare(const void *n0, const void *n1)
 {
-    char *left = (char *)val0;
-    char *right = (char *)val1;
-    size_t l_len = strlen(left);
-    size_t r_len = strlen(right);
-
-    if (l_len < r_len)
-        return -1;
-    else if(l_len > r_len)
-        return 1;
-    else {
-        int i;
-
-        for (i = l_len - 1; i >= 0; i--) {
-            if (left[i] == right[i])
-                continue;
-            else if (left[i] < right[i])
-                return -1;
-            else
-                return 1;
-        }
-        return 0;
-    }
+    return strcmp(n0, n1);
 }
 
 

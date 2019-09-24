@@ -12,3 +12,7 @@
 ## [0.0.3]
 - Fix memory protection issues
 - Provide lazy page check support
+
+## [0.0.4]
+- Adjust the interfaces of KLNK io
+- Fix issues in KLNK fast mode

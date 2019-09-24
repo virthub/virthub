@@ -14,7 +14,7 @@ int vres_sync_request(vres_t *resource, vres_time_t *time)
     vres_sync_result_t result;
 
     vres_set_op(&res, VRES_OP_SYNC);
-    ret = klnk_io_sync(&res, NULL, 0, (char *)&result, sizeof(vres_sync_result_t), NULL);
+    ret = klnk_io_sync(&res, NULL, 0, (char *)&result, sizeof(vres_sync_result_t), -1);
     if (ret || result.retval) {
         log_resource_err(&res, "failed to request");
         return ret ? ret : result.retval;

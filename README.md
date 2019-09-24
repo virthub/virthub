@@ -11,7 +11,7 @@
 * aclocal, autoconf, autoheader, automake, autoreconf, fuse
 
 ## **Version**
-* 0.0.3
+* 0.0.4
 * This version is compatible with Linux kernel 3.10.63.
 
 ## **License**

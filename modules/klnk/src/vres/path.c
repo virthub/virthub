@@ -76,14 +76,7 @@ void vres_get_mig_path(vres_t *resource, char *path)
 void vres_get_root_path(vres_t *resource, char *path)
 {
     strcpy(path, VRES_PATH_SEPERATOR);
-    vres_path_append_owner(path, resource->owner);
-}
-
-
-void vres_get_cache_path(vres_t *resource, char *path)
-{
-    vres_get_record_path(resource, path);
-    vres_path_append_cache(path);
+    vres_path_append_own(path, resource->owner);
 }
 
 
@@ -125,7 +118,14 @@ void vres_get_holder_path(vres_t *resource, char *path)
 void vres_get_record_path(vres_t *resource, char *path)
 {
     vres_get_path(resource, path);
-    vres_path_append_queue(path, vres_get_queue(resource->entry));
+    vres_path_append_que(path, vres_get_queue(resource->entry));
+}
+
+
+void vres_get_temp_path(vres_t *resource, char *path)
+{
+    vres_get_record_path(resource, path);
+    vres_path_append_temp(path);
 }
 
 
@@ -147,7 +147,6 @@ int vres_path_join(const char *p1, const char *p2, char *path)
 {
     if (strlen(p1) + strlen(p2) + 1 >= VRES_PATH_MAX)
         return -EINVAL;
-
     sprintf(path, "%s/%s", p1, p2);
     return 0;
 }
@@ -164,21 +163,17 @@ int vres_get_resource(const char *path, vres_t *resource)
     memset(resource, 0, sizeof(vres_t));
     if (*start++ != '/')
         return -EINVAL;
-
     id = (vres_id_t)strtoul(start, &end, 16);
     if (start == end)
         return -EINVAL;
-
     start = &end[1];
     cls = (vres_cls_t)strtoul(start, &end, 16);
     if (start == end)
         return -EINVAL;
-
     start = &end[1];
     key = (vres_key_t)strtoul(start, &end, 16);
     if (start == end)
         return -EINVAL;
-
     resource->cls = cls;
     resource->key = key;
     resource->owner = id;
@@ -187,32 +182,28 @@ int vres_get_resource(const char *path, vres_t *resource)
 }
 
 
-int vres_is_key_path(char *path)
+bool vres_is_key_path(char *path)
 {
     char *end;
     const char *start = path;
 
     if (*start++ != '/')
-        return 0;
-
+        return false;
     strtoul(start, &end, 16);
     if (start == end)
-        return 0;
-
+        return false;
     start = &end[1];
     strtoul(start, &end, 16);
     if (start == end)
-        return 0;
-
+        return false;
     start = &end[1];
     strtoul(start, &end, 16);
     if (start == end)
-        return 0;
-
+        return false;
     if ((end[0] == '/') && (end[1] == '\0'))
-        return 1;
+        return true;
     else
-        return 0;
+        return false;
 }
 
 

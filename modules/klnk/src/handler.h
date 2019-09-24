@@ -10,8 +10,8 @@
         if (resource->cls == VRES_CLS_SHM) { \
             vres_op_t op = vres_get_op(resource); \
             if (op == VRES_OP_SHMFAULT) { \
-                vres_shmfault_arg_t *arg = (vres_shmfault_arg_t *)req->buf; \
-                log_resource_info(resource, "detect error !!! (%s) <idx:%d>", log_get_err(err), (int)(arg)->index); \
+                vres_shm_req_t *shm_req = (vres_shm_req_t *)req->buf; \
+                log_resource_info(resource, "detect error !!! (%s) <idx:%d>", log_get_err(err), (int)(shm_req)->index); \
             } \
         } \
     } \

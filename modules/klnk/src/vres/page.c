@@ -201,7 +201,7 @@ int vres_page_update(vres_page_t *page, char *buf)
     int i, j;
     int ret = 0;
     bool dirty = false;
-    int diff[VRES_LINE_MAX];
+    bool diff[VRES_LINE_MAX];
     vres_digest_t digest[VRES_LINE_MAX];
 
     for (i = 0; i < VRES_LINE_MAX; i++)
@@ -210,14 +210,14 @@ int vres_page_update(vres_page_t *page, char *buf)
         j = i * VRES_LINE_SIZE;
         if (page->digest[i] != digest[i]) {
             dirty = true;
-            diff[i] = 1;
+            diff[i] = true;
             memcpy(&page->buf[j], &buf[j], VRES_LINE_SIZE);
         } else {
             if (!memcmp(&page->buf[j], &buf[j], VRES_LINE_SIZE))
-                diff[i] = 0;
+                diff[i] = false;
             else {
                 dirty = true;
-                diff[i] = 1;
+                diff[i] = true;
                 memcpy(&page->buf[j], &buf[j], VRES_LINE_SIZE);
             }
         }
@@ -305,10 +305,10 @@ void vres_page_update_candidates(vres_t *resource, vres_page_t *page, vres_id_t 
 }
 
 
-int vres_page_get_diff(vres_page_t *page, vres_version_t version, int *diff)
+int vres_page_get_diff(vres_page_t *page, vres_version_t version, bool *diff)
 {
     int interval = 0;
-    const size_t size = VRES_LINE_MAX * sizeof(int);
+    const size_t size = VRES_LINE_MAX * sizeof(bool);
 
     if (page->version >= version)
         interval = page->version - version;
@@ -322,7 +322,7 @@ int vres_page_get_diff(vres_page_t *page, vres_version_t version, int *diff)
         int i;
 
         for (i = 0; i < VRES_LINE_MAX; i++)
-            diff[i] = 1;
+            diff[i] = true;
     }
     return 0;
 }

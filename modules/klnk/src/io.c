@@ -30,24 +30,9 @@ int klnk_io_get_output(klnk_desc_t desc, char *buf, size_t size)
 }
 
 
-static void *klnk_io_create(void *buf)
-{
-    int ret;
-    vres_arg_t *arg = (vres_arg_t *)buf;
-    vres_t *resource = &arg->resource;
-
-    ret = klnk_io_sync(resource, arg->in, arg->inlen, arg->out, arg->outlen, arg->dest);
-    if (ret)
-        log_err("failed to send, ret=%s", log_get_err(ret));
-    log_klnk_io_create(resource, arg->dest);
-    pthread_exit(NULL);
-    free(buf);
-    return NULL;
-}
-
-
+// If dest is set to -1, the request is sent to the resource owner by default
 EVAL_DECL(klnk_io_sync);
-int klnk_io_sync(vres_t *resource, char *in, size_t inlen, char *out, size_t outlen, vres_id_t *dest)
+int klnk_io_sync(vres_t *resource, char *in, size_t inlen, char *out, size_t outlen, vres_id_t dest)
 {
     int ret = 0;
     int retry = 0;
@@ -64,16 +49,16 @@ int klnk_io_sync(vres_t *resource, char *in, size_t inlen, char *out, size_t out
     }
     log_klnk_io_sync(resource, dest, "start ...");
 again:
-    if (!dest) {
+    if (dest == -1) {
         ret = vres_lookup(resource, &peer);
         if (ret) {
             log_err("failed to lookup (ret=%s)", log_get_err(ret));
             goto release;
         }
     } else {
-        ret = vres_get_peer(*dest, &peer);
+        ret = vres_get_peer(dest, &peer);
         if (ret) {
-            log_err("failed to get peer %d (ret=%s)", *dest, log_get_err(ret));
+            log_err("failed to get peer %d (ret=%s)", dest, log_get_err(ret));
             goto release;
         }
     }
@@ -90,8 +75,8 @@ again:
         if (inlen > 0)
             memcpy(req->buf, in, inlen);
     }
-    if (dest)
-        req->resource.owner = *dest;
+    if (dest != -1)
+        req->resource.owner = dest;
     else
         req->resource.owner = peer.id;
     log_klnk_io_sync_connect(resource, peer, dest);
@@ -110,8 +95,8 @@ again:
     log_klnk_io_sync_output(resource);
     ret = klnk_io_get_output(desc, out, outlen);
     if (-ENOOWNER == ret) {
-        if (dest)
-            log_err("no owner (dest=%d, owner=%d, addr=%s)", *dest, req->resource.owner, addr2str(peer.address));
+        if (dest != -1)
+            log_err("no owner (dest=%d, owner=%d, addr=%s)", dest, req->resource.owner, addr2str(peer.address));
         else
             log_err("no owner (owner=%d, addr=%s)", req->resource.owner, addr2str(peer.address));
         vres_cache_flush(resource);
@@ -131,8 +116,8 @@ retry:
         vres_sleep(KLNK_RETRY_INTERVAL);
         goto again;
     } else {
-        if (dest)
-            log_err("failed to send (reaching the maximum retry attempts, dest=%d, owner=%d)", *dest, req->resource.owner);
+        if (dest != -1)
+            log_err("failed to send (reaching the maximum retry attempts, dest=%d, owner=%d)", dest, req->resource.owner);
         else
             log_err("failed to send (reaching the maximum retry attempts, owner=%d)", req->resource.owner);
     }
@@ -141,11 +126,50 @@ retry:
 }
 
 
-int klnk_io_async(vres_t *resource, char *in, size_t inlen, char *out, size_t outlen, vres_id_t *dest, pthread_t *thread)
+static void *klnk_io_do_create(void *buf)
+{
+    int ret;
+    klnk_arg_t *p = (klnk_arg_t *)buf;
+    vres_arg_t *arg = p->arg;
+    vres_id_t dest = p->dest;
+    bool release = p->release;
+    vres_t *resource = &arg->resource;
+
+    ret = klnk_io_sync(resource, arg->in, arg->inlen, arg->out, arg->outlen, dest);
+    if (ret)
+        log_resource_err(resource, "failed to send (ret=%s)", log_get_err(ret));
+    if (release)
+        free(arg);
+    free(buf);
+    // pthread_exit(NULL);
+    log_klnk_io_create(resource, dest);
+    return NULL;
+}
+
+// If release is true, arg will be released at last
+int klnk_io_create(pthread_t *thread, vres_id_t dest, vres_arg_t *arg, bool release)
 {
     int ret;
     pthread_attr_t attr;
-    vres_arg_t *arg = (vres_arg_t *)malloc(sizeof(vres_arg_t));
+    klnk_arg_t *karg = (klnk_arg_t *)calloc(1, sizeof(klnk_arg_t));
+
+    assert(karg);
+    karg->arg = arg;
+    karg->dest = dest;
+    karg->release = release;
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
+    ret = pthread_create(thread, &attr, klnk_io_do_create, (void *)karg);
+    pthread_attr_destroy(&attr);
+    if (ret)
+        log_resource_err(&arg->resource, "failed to create io");
+}
+
+
+int klnk_io_async(vres_t *resource, char *in, size_t inlen, char *out, size_t outlen, vres_id_t dest, pthread_t *thread)
+{
+    int ret;
+    vres_arg_t *arg = (vres_arg_t *)calloc(1, sizeof(vres_arg_t));
 
     if (!arg) {
         log_err("no memory");
@@ -153,21 +177,15 @@ int klnk_io_async(vres_t *resource, char *in, size_t inlen, char *out, size_t ou
     }
     arg->in = in;
     arg->out = out;
-    arg->dest = dest;
     arg->inlen = inlen;
     arg->outlen = outlen;
     arg->resource = *resource;
-    pthread_attr_init(&attr);
-    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
-    ret = pthread_create(thread, &attr, klnk_io_create, (void *)arg);
-    pthread_attr_destroy(&attr);
-    if (ret)
-        free(arg);
-    return ret;
+    arg->dest = -1;
+    return klnk_io_create(thread, dest, arg, true);
 }
 
 
-int klnk_io_direct(vres_t *resource, char *in, size_t inlen, char *out, size_t outlen, vres_addr_t addr)
+int klnk_io_sync_by_addr(vres_t *resource, char *in, size_t inlen, char *out, size_t outlen, vres_addr_t addr)
 {
     int ret = 0;
     char *buf = NULL;

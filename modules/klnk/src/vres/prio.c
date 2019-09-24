@@ -303,8 +303,8 @@ static int vres_prio_convert_from_time(vres_t *resource, vres_id_t id, vres_time
     int pos = vres_member_get_pos(resource, id);
 #endif
     if (pos < 0) {
-        log_resource_err(resource, "invalid id");
-        return -EINVAL;
+        log_resource_warning(resource, "detect known id (id=%d)", id);
+        pos = 0;
     }
     return prio_table[pos][vres_prio_interval(time)];
 }
@@ -549,7 +549,7 @@ void *vres_prio_select(void *arg)
         vres_index_t index;
 
         vres_prio_lock(resource);
-        has_rec = 0 == vres_record_head(path, &index);
+        has_rec = !vres_record_head(path, &index);
         if (has_rec) {
             int i;
             vres_id_t id;
@@ -627,8 +627,8 @@ void *vres_prio_select(void *arg)
                     pres = &req->resource;
                     id = vres_get_id(pres);
                     if ((id == select) || !select) {
-                        vres_shmfault_arg_t *arg = (vres_shmfault_arg_t *)req->buf;
-                        bool need_lock = arg->cmd != VRES_SHM_PROPOSE;
+                        vres_shm_req_t *shm_req = (vres_shm_req_t *)req->buf;
+                        bool need_lock = shm_req->cmd != VRES_SHM_PROPOSE;
                         vres_reply_t *reply = NULL;
 
                         vres_prio_unlock(resource);
@@ -701,10 +701,10 @@ int vres_prio_extract(vres_req_t *req, int *val, vres_time_t *live)
     switch (op) {
     case VRES_OP_SHMFAULT:
     {
-        vres_shmfault_arg_t *arg = (vres_shmfault_arg_t *)req->buf;
+        vres_shm_req_t *shm_req = (vres_shm_req_t *)req->buf;
 
-        *val = arg->prio;
-        *live = arg->live;
+        *val = shm_req->prio;
+        *live = shm_req->live;
         return 0;
     }
     default:

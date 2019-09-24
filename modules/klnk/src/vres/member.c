@@ -31,7 +31,7 @@ int vres_member_send_req(vres_req_t *req)
         vres_id_t id = members->list[i].id;
 
         if ((id != resource->owner) && (id != src)) {
-            ret = klnk_io_sync(resource, req->buf, req->length, NULL, 0, &id);
+            ret = klnk_io_sync(resource, req->buf, req->length, NULL, 0, id);
             if (ret) {
                 log_resource_err(resource, "failed to send to %d (ret=%s)", id, log_get_err(ret));
                 break;

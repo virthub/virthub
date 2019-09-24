@@ -11,8 +11,9 @@
 #endif
 
 #define ENABLE_PRIORITY
-#define ENABLE_LIVE_TIME
 #define ENABLE_WRITE_EXT
+#define ENABLE_LIVE_TIME
+#define ENABLE_FAST_REPLY
 #define ENABLE_DYNAMIC_OWNER
 
 // #define ENABLE_TTL
@@ -20,7 +21,6 @@
 // #define ENABLE_TSKPUT
 // #define ENABLE_BARRIER
 // #define ENABLE_TIME_SYNC
-// #define ENABLE_FAST_REPLY
 // #define ENABLE_PAGE_PRESENT
 // #define ENABLE_LASY_PAGE_CHECK
 
@@ -57,7 +57,7 @@
 #define LOG_KLNK_RPC_GET
 #define LOG_KLNK_RPC_PUT
 #define LOG_KLNK_RPC_WAIT
-#define LOG_KLNK_RPC_BROADCAST
+#define LOG_KLNK_RPC_SEND_TO_PEERS
 #endif
 
 #include "info.h"

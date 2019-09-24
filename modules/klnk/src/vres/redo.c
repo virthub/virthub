@@ -23,7 +23,7 @@ int vres_redo_req(vres_req_t *req, vres_index_t index, int flags)
 
             vres_set_op(&res, VRES_OP_REPLY);
             vres_set_off(&res, index);
-            klnk_io_sync(&res, reply->buf, reply->length, NULL, 0, &src);
+            klnk_io_sync(&res, reply->buf, reply->length, NULL, 0, src);
         }
         free(reply);
     }
@@ -50,8 +50,12 @@ int vres_redo(vres_t *resource, int flags)
         }
         ret = vres_redo_req(record.req, index, flags);
         vres_record_put(&record);
-        if (!ret)
-            vres_record_remove(path, index);
+        if (ret) {
+             // TODO: handle redo fault
+            assert(ret == -EAGAIN);
+            break;
+        }
+        vres_record_remove(path, index);
         ret = vres_record_next(path, &index);
     }
     log_redo(resource, ">> finished <<");
@@ -78,7 +82,7 @@ int vres_redo_all(vres_t *resource, int flags)
     pend = path + strlen(path);
     nr_queues = vres_get_nr_queues(resource->cls);
     for (i = 0; i < nr_queues; i++) {
-        vres_path_append_queue(path, i);
+        vres_path_append_que(path, i);
         ret = vres_record_head(path, &index);
 
         while (!ret) {
