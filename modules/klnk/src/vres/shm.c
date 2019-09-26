@@ -1258,15 +1258,15 @@ int vres_shm_deliver(vres_page_t *page, vres_req_t *req)
         return ret;
     }
 #endif
+#ifdef ENABLE_WRITE_EXT
+    if (flags & VRES_RDWR)
+        vres_sleep(VRES_SHM_WRITE_INTV);
+#endif
     ret = vres_page_check(resource, page, PAGE_CHECK_MAX, VRES_RDONLY);
     if (ret) {
         log_resource_err(resource, "failed to check page");
         return ret;
     }
-#ifdef ENABLE_WRITE_EXT
-    if (flags & VRES_RDWR)
-        vres_sleep(VRES_SHM_WRITE_INTV);
-#endif
     log_shm_deliver(page, req);
     return 0;
 }
@@ -1414,15 +1414,16 @@ int vres_shm_call(vres_arg_t *arg)
     vres_file_entry_t *entry = (vres_file_entry_t *)arg->entry;
     vres_page_t *page = vres_file_get_desc(entry, vres_page_t);
 
-    if (vres_shm_need_priority(resource, page)) {
+    if (vres_shm_need_priority(resource, page))
         prio = true;
-        vres_prio_set_busy(resource);
-    }
-    ret = klnk_rpc_send_to_peers(arg);
-    if (prio)
-        vres_prio_set_idle(resource);
-    free(arg->in);
     vres_page_put(resource, entry);
+    if (prio) {
+        vres_prio_set_busy(resource);
+        ret = klnk_rpc_send_to_peers(arg);
+        vres_prio_set_idle(resource);
+    } else
+        ret = klnk_rpc_send_to_peers(arg);
+    free(arg->in);
     if (ret)
         log_resource_err(resource, "failed to send");
     return ret;

@@ -15,7 +15,7 @@
 #define VRES_PRIO_LOCK_ENTRY_SIZE 3
 
 #define VRES_PRIO_RETRY_MAX       16
-#define VRES_PRIO_NR_REPEATS      32
+#define VRES_PRIO_NR_REPEATS      2
 #define VRES_PRIO_NR_INTERVALS    256
 #define VRES_PRIO_PERIOD          100000   // usec
 #define VRES_PRIO_SYNC_INTV       5000000  // usec
