@@ -20,7 +20,7 @@
 
 #define VRES_SHM_NR_PEERS   (VRES_PAGE_NR_HOLDERS - 1)
 #define VRES_SHM_NR_AREAS   4
-#define VRES_SHM_NR_VISITS  1
+#define VRES_SHM_NR_VISITS  2
 #define VRES_SHM_WRITE_INTV 5000 // usec
 
 #define VRES_SHMMAX         0x2000000                                         /* max shared seg size (bytes) */
