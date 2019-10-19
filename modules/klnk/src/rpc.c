@@ -27,6 +27,7 @@ int klnk_rpc_check(vres_t *resource, unsigned long addr, size_t inlen, size_t ou
     memset(arg, 0, sizeof(vres_arg_t));
     arg->resource = *resource;
     arg->index = -1;
+    arg->dest = -1;
     if (addr && size) {
         int desc = vres_memget(addr, size, &buf);
 
@@ -97,8 +98,6 @@ void klnk_rpc_put(vres_arg_t *arg)
 {
     vres_t *resource = &arg->resource;
 
-    if (VRES_CLS_SHM == resource->cls)
-        vres_shm_put_arg(arg);
     klnk_rpc_release(arg);
     log_klnk_rpc_put(resource);
 }
@@ -134,9 +133,8 @@ int klnk_rpc(vres_arg_t *arg)
 
 int klnk_rpc_send(vres_arg_t *arg)
 {
-    int ret;
+    int ret = klnk_io_sync(&arg->resource, arg->in, arg->inlen, arg->out, arg->outlen, arg->dest);
 
-    ret = klnk_io_sync(&arg->resource, arg->in, arg->inlen, arg->out, arg->outlen, arg->dest);
     if (ret) {
         if (!vres_is_generic_err(ret)) {
             arg->index = vres_err_to_index(ret);
@@ -148,25 +146,26 @@ int klnk_rpc_send(vres_arg_t *arg)
 }
 
 
-int klnk_rpc_broadcast(vres_arg_t *arg)
+int klnk_rpc_send_to_peers(vres_arg_t *arg)
 {
     int ret = 0;
+    vres_t *resource = &arg->resource;
 
     if (!arg->peers)
-        ret = klnk_io_sync(&arg->resource, arg->in, arg->inlen, arg->out, arg->outlen, arg->dest);
+        ret = klnk_io_sync(resource, arg->in, arg->inlen, arg->out, arg->outlen, arg->dest);
     else {
         int i;
         int count = 0;
-        pthread_t threads[KLNK_RPC_MAX];
+        pthread_t threads[KLNK_PEER_MAX];
 
-        if (arg->peers->total > KLNK_RPC_MAX) {
-            log_resource_err(&arg->resource, "too much rpc (total=%d)", arg->peers->total);
+        if (arg->peers->total > KLNK_PEER_MAX) {
+            log_resource_err(resource, "too much peers (total=%d)", arg->peers->total);
             return -EINVAL;
         }
         for (i = 0; i < arg->peers->total; i++) {
-            ret = klnk_io_async(&arg->resource, arg->in, arg->inlen, arg->out, arg->outlen, &arg->peers->list[i], &threads[i]);
+            ret = klnk_io_create(&threads[i], arg->peers->list[i], arg, false);
             if (ret) {
-                log_resource_err(&arg->resource, "failed, ret=%s", log_get_err(ret));
+                log_resource_err(resource, "failed, ret=%s", log_get_err(ret));
                 break;
             }
             count++;
@@ -174,6 +173,6 @@ int klnk_rpc_broadcast(vres_arg_t *arg)
         for (i = 0; i < count; i++)
             pthread_join(threads[i], NULL);
     }
-    log_klnk_rpc_broadcast(&arg->resource);
+    log_klnk_rpc_send_to_peers(resource);
     return ret;
 }

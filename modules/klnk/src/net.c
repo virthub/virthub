@@ -82,7 +82,7 @@ klnk_desc_t klnk_connect(vres_addr_t address, int port)
     }
     ret = connect(desc, (struct sockaddr *)&addr, sizeof(struct sockaddr_in));
     if (ret < 0) {
-        log_err("failed to connect to %s, ret=%d", inet_ntoa(addr.sin_addr), ret);
+        log_err("failed to connect to %s, err=%s", inet_ntoa(addr.sin_addr), strerror(errno));
         klnk_close(desc);
         return -EFAULT;
     }

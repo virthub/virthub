@@ -14,11 +14,11 @@ void vres_trace(vres_req_t *req)
     vres_op_t op = vres_get_op(&req->resource);
 
     if (VRES_OP_SHMFAULT == op) {
-        vres_shmfault_arg_t *arg = (vres_shmfault_arg_t *)req->buf;
+        vres_shm_req_t *shm_req = (vres_shm_req_t *)req->buf;
 
-        if (arg->cmd >= VRES_SHM_NR_COMMANDS)
+        if (shm_req->cmd >= VRES_SHM_NR_COMMANDS)
             return;
-        cmd[arg->cmd]++;
+        cmd[shm_req->cmd]++;
     }
     count++;
     if (VRES_TRACE_INTERVAL == count) {

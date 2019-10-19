@@ -24,7 +24,7 @@ int vres_request_join(vres_t *resource, vres_join_result_t **result)
         }
     }
     vres_set_op(&res, VRES_OP_JOIN);
-    ret = klnk_io_sync(&res, NULL, 0, (char *)p, size, NULL);
+    ret = klnk_io_sync(&res, NULL, 0, (char *)p, size, -1);
     if (ret) {
         log_resource_err(resource, "failed to join");
         goto out;
@@ -49,7 +49,7 @@ int vres_request_leave(vres_t *resource)
     vres_leave_result_t result;
 
     vres_set_op(&res, VRES_OP_LEAVE);
-    ret = klnk_io_sync(&res, NULL, 0, (char *)&result, sizeof(vres_leave_result_t), NULL);
+    ret = klnk_io_sync(&res, NULL, 0, (char *)&result, sizeof(vres_leave_result_t), -1);
     if (ret || (result.retval && (result.retval != -ENOOWNER))) {
         log_resource_err(resource, "failed to leave");
         return -EFAULT;

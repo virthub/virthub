@@ -77,7 +77,7 @@ void *vres_tsk_request(void *ptr)
 
         vres_set_op(resource, VRES_OP_TSKCTL);
         arg.cmd = VRES_TSK_WAKEUP;
-        klnk_io_direct(resource, (char *)&arg, sizeof(vres_tskctl_arg_t), (char *)&result, sizeof(vres_tskctl_result_t), req->addr);
+        klnk_io_sync_by_addr(resource, (char *)&arg, sizeof(vres_tskctl_arg_t), (char *)&result, sizeof(vres_tskctl_result_t), req->addr);
     }
     free(ptr);
     return NULL;

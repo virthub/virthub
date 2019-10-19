@@ -7,8 +7,8 @@
 #define _log_proc(req, fmt, ...) do { \
     vres_t *resource = &req->resource; \
     if (vres_get_op(resource) == VRES_OP_SHMFAULT) { \
-        vres_shmfault_arg_t *arg = (vres_shmfault_arg_t *)req->buf; \
-        log_resource_info(resource, "op=%s, cmd=%s, " fmt, log_get_op(vres_get_op(resource)), log_get_shm_cmd(arg->cmd), ##__VA_ARGS__); \
+        vres_shm_req_t *shm_req = (vres_shm_req_t *)req->buf; \
+        log_resource_info(resource, "op=%s, cmd=%s, " fmt, log_get_op(vres_get_op(resource)), log_get_shm_cmd(shm_req->cmd), ##__VA_ARGS__); \
     } else \
         log_resource_info(resource, "op=%s, " fmt, log_get_op(vres_get_op(resource)), ##__VA_ARGS__); \
 } while(0)

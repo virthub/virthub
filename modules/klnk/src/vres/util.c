@@ -222,8 +222,8 @@ vres_time_t vres_get_time_offset(vres_time_t start, vres_time_t ref)
 
 int vres_memget(unsigned long addr, size_t size, char **buf)
 {
-    static bool init = false;
     static int desc = -1;
+    static bool init = false;
 
     if (!init) {
         desc = open("/dev/mem", O_RDWR);

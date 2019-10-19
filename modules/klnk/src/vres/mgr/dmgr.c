@@ -101,13 +101,13 @@ int vres_dmgr_forward(vres_page_t *page, vres_req_t *req)
     vres_t *resource = &req->resource;
 
     if (page->owner) {
-        vres_shmfault_arg_t *arg = (vres_shmfault_arg_t *)req->buf;
-        int cmd = arg->cmd;
+        vres_shm_req_t *shm_req = (vres_shm_req_t *)req->buf;
+        int cmd = shm_req->cmd;
         int ret;
 
-        arg->cmd = VRES_SHM_NOTIFY_OWNER;
-        ret = klnk_io_sync(resource, req->buf, req->length, NULL, 0, &page->owner);
-        arg->cmd = cmd;
+        shm_req->cmd = VRES_SHM_NOTIFY_OWNER;
+        ret = klnk_io_sync(resource, req->buf, req->length, NULL, 0, page->owner);
+        shm_req->cmd = cmd;
         log_dmgr_forward(resource, "forward to *%d*", page->owner);
         return ret;
     } else {

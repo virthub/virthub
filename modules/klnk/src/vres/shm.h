@@ -18,7 +18,7 @@
 #include "line.h"
 #include "tsk.h"
 
-#define VRES_SHM_NR_PEERS   VRES_PAGE_NR_HOLDERS
+#define VRES_SHM_NR_PEERS   (VRES_PAGE_NR_HOLDERS - 1)
 #define VRES_SHM_NR_AREAS   4
 #define VRES_SHM_NR_VISITS  2
 #define VRES_SHM_WRITE_INTV 5000 // usec
@@ -55,20 +55,21 @@
 
 #ifdef SHOW_MORE
 #define LOG_SHM_LINES
-#define LOG_SHM_CACHE
+#define LOG_SHM_RECORD
 #define LOG_SHM_WAKEUP
 #define LOG_SHM_BYPASS
 #define LOG_SHM_SAVE_PAGE
 #define LOG_SHM_PAGE_DIFF
 #define LOG_SHM_CHECK_ARGS
+#define LOG_SHM_PAGE_CONTENT
 #define LOG_SHM_SAVE_UPDATES
 #define LOG_SHM_CLOCK_UPDATE
-#define LOG_SHM_PAGE_CONTENT
 #endif
 #endif
 
 #include "log_shm.h"
 
+#define vres_shm_get_record_path vres_get_temp_path
 #define vres_shm_is_silent_holder(page) (!(page)->hid)
 
 enum vres_shm_cmd {
@@ -82,7 +83,7 @@ enum vres_shm_cmd {
     VRES_SHM_NR_COMMANDS,
 };
 
-typedef struct vres_shmfault_arg {
+typedef struct {
     int cmd;
 #ifdef ENABLE_TTL
     int ttl;
@@ -96,44 +97,43 @@ typedef struct vres_shmfault_arg {
     vres_version_t version;
     vres_id_t owner;
     vres_peers_t peers;
-} vres_shmfault_arg_t;
+} vres_shm_req_t;
 
-typedef struct vres_shmfault_result {
-    long retval;
-    char buf[PAGE_SIZE];
-} vres_shmfault_result_t;
-
-typedef struct vres_shm_peer_info {
-    int total;
-    vres_id_t list[0];
-} vres_shm_peer_info_t;
-
-typedef struct vres_shm_notify_proposer_arg {
-    vres_shmfault_arg_t arg;
+typedef struct {
+    vres_shm_req_t req; // Note that this item must be placed at the beginning
     int total;
     int nr_lines;
     vres_line_t lines[0];
-} vres_shm_notify_proposer_arg_t;
+} vres_shm_rsp_t;
 
-typedef struct vres_shmctl_arg {
+typedef struct {
+    int total;
+    vres_id_t list[0];
+} vres_shm_info_t;
+
+typedef struct {
+    long retval;
+    char buf[PAGE_SIZE];
+} vres_shm_result_t;
+
+typedef struct {
     int cmd;
-} vres_shmctl_arg_t;
+} vres_shmctl_req_t;
 
-typedef struct vres_shmctl_result {
+typedef struct {
     long retval;
 } vres_shmctl_result_t;
 
-typedef struct vres_shm_cache {
+typedef struct {
     int index;
     vres_id_t id;
     vres_version_t version;
-} vres_shm_cache_t;
+} vres_shm_record_t;
 
 void vres_shm_init();
 int vres_shm_call(vres_arg_t *arg);
 int vres_shm_create(vres_t *resource);
 int vres_shm_destroy(vres_t *resource);
-void vres_shm_put_arg(vres_arg_t *arg);
 int vres_shm_ipc_init(vres_t *resource);
 int vres_shm_check_arg(vres_arg_t *arg);
 int vres_shm_get_arg(vres_t *resource, vres_arg_t *arg);

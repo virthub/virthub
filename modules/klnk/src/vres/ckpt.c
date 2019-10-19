@@ -85,7 +85,7 @@ int vres_ckpt_request(vres_t *resource, vres_id_t dest)
     int ret;
     vres_ckpt_result_t result;
 
-    ret = klnk_io_sync(resource, NULL, 0, (char *)&result, sizeof(vres_ckpt_result_t), &dest);
+    ret = klnk_io_sync(resource, NULL, 0, (char *)&result, sizeof(vres_ckpt_result_t), dest);
     if (ret || result.retval) {
         log_resource_err(resource, "failed to request");
         return ret ? ret : result.retval;

@@ -14,7 +14,7 @@ int vres_record_check(char *path, vres_index_t index, vres_rec_hdr_t *hdr)
     char name[VRES_PATH_MAX];
 
     strcpy(name, path);
-    vres_path_append_index(name, index);
+    vres_path_append_idx(name, index);
     filp = vres_file_open(name, "r");
     if (!filp)
         return -ENOENT;
@@ -32,7 +32,7 @@ int vres_record_get(char *path, vres_index_t index, vres_record_t *record)
     char name[VRES_PATH_MAX];
 
     strcpy(name, path);
-    vres_path_append_index(name, index);
+    vres_path_append_idx(name, index);
     entry = vres_file_get_entry(name, 0, FILE_RDONLY);
     if (!entry)
         return -ENOENT;
@@ -66,7 +66,7 @@ int vres_record_save(char *path, vres_req_t *req, vres_index_t *index)
     *index = *curr;
     size = sizeof(vres_rec_hdr_t) + sizeof(vres_req_t) + req->length;
     strcpy(name, path);
-    vres_path_append_index(name, *index);
+    vres_path_append_idx(name, *index);
     record = vres_file_get_entry(name, size, FILE_RDWR | FILE_CREAT);
     if (!record) {
         log_err("failed to create");
@@ -99,7 +99,7 @@ int vres_record_update(char *path, vres_index_t index, vres_rec_hdr_t *hdr)
     char name[VRES_PATH_MAX];
 
     strcpy(name, path);
-    vres_path_append_index(name, index);
+    vres_path_append_idx(name, index);
     filp = vres_file_open(name, "r+");
     if (!filp)
         return -ENOENT;
@@ -181,7 +181,7 @@ int vres_record_remove(char *path, vres_index_t index)
         int next = *curr;
 
         strcpy(name, path);
-        vres_path_append_index(name, next);
+        vres_path_append_idx(name, next);
         vres_file_remove(name);
         log_record_remove(name, -1, -1);
         do {
@@ -195,7 +195,7 @@ int vres_record_remove(char *path, vres_index_t index)
             }
             if (!(hdr.flg & VRES_RECORD_NEW)) {
                 strcpy(name, path);
-                vres_path_append_index(name, next);
+                vres_path_append_idx(name, next);
                 vres_file_remove(name);
                 log_record_remove(name, -1, -1);
             } else

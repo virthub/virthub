@@ -3,10 +3,10 @@
 
 #include "log.h"
 
-#ifdef LOG_KLNK_RPC_BROADCAST
-#define log_klnk_rpc_broadcast log_resource_ln
+#ifdef LOG_KLNK_RPC_SEND_TO_PEERS
+#define log_klnk_rpc_send_to_peers log_resource_ln
 #else
-#define log_klnk_rpc_broadcast(...) do {} while (0)
+#define log_klnk_rpc_send_to_peers(...) do {} while (0)
 #endif
 
 #ifdef LOG_KLNK_HANDLER
@@ -29,8 +29,8 @@
 
 #ifdef LOG_KLNK_IO_SYNC
 #define log_klnk_io_sync(resource, dest, str) do { \
-    if (dest) \
-        log_resource_info(resource, "dest=%d, %s", (int)*dest, str); \
+    if (dest != -1) \
+        log_resource_info(resource, "dest=%d, %s", dest, str); \
     else \
         log_resource_info(resource, "%s", str); \
 } while (0)
@@ -40,8 +40,8 @@
 
 #ifdef LOG_KLNK_IO_SYNC_CONNECT
 #define log_klnk_io_sync_connect(resource, peer, dest) do { \
-    if (dest) \
-        log_resource_info(resource, "connect to %s (%d)", addr2str(peer.address), *dest); \
+    if (dest != -1) \
+        log_resource_info(resource, "connect to %s (%d)", addr2str(peer.address), dest); \
     else \
         log_resource_info(resource, "connect to %s", addr2str(peer.address)); \
 } while (0)
@@ -51,8 +51,8 @@
 
 #ifdef LOG_KLNK_IO_CREATE
 #define log_klnk_io_create(resource, dest) do { \
-    if (dest) \
-        log_resource_info(resource, "*** sent a request to %d ***", *dest); \
+    if (dest != -1) \
+        log_resource_info(resource, "*** sent a request to %d ***", dest); \
     else \
         log_resource_info(resource, "*** sent a request ***"); \
 } while (0)

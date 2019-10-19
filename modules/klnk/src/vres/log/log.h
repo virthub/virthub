@@ -1,6 +1,8 @@
 #ifndef _LOG_H
 #define _LOG_H
 
+#include <errno.h>
+
 #define FLAG2STR
 #define LOG_STR_LEN 1024
 
@@ -12,7 +14,7 @@
 #define log_debug(...) do {} while(0)
 #endif
 
-#ifndef LOG2FILE
+#if !defined(LOG2FILE) || !defined(DEBUG)
 #define log log_print
 #define log_ln(fmt, ...) log_print(fmt "\n", ##__VA_ARGS__)
 #define log_alarm(fmt, ...) printf(fmt "\n", ##__VA_ARGS__)

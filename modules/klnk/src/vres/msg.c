@@ -164,11 +164,11 @@ release:
                 vres_msgrcv_result_t *msgrcv_result = (vres_msgrcv_result_t *)output;
                 msgrcv_result->retval = size;
                 memcpy(&msgrcv_result[1], (struct msgbuf *)&msgsnd_arg[1], size + sizeof(long));
-                klnk_io_sync(&res, output, outlen, NULL, 0, &src);
+                klnk_io_sync(&res, output, outlen, NULL, 0, src);
             } else {
                 vres_msgrcv_result_t msgrcv_result;
                 msgrcv_result.retval = ret;
-                klnk_io_sync(&res, (char *)&msgrcv_result, sizeof(msgrcv_result), NULL, 0, &src);
+                klnk_io_sync(&res, (char *)&msgrcv_result, sizeof(msgrcv_result), NULL, 0, src);
             }
             if (output)
                 free(output);
@@ -176,7 +176,7 @@ release:
             vres_msgrcv_result_t msgrcv_result;
             vres_record_put(&record);
             msgrcv_result.retval = -E2BIG;
-            klnk_io_sync(&res, (char *)&msgrcv_result, sizeof(msgrcv_result), NULL, 0, &src);
+            klnk_io_sync(&res, (char *)&msgrcv_result, sizeof(msgrcv_result), NULL, 0, src);
         }
     } else { // no receiver
         msq.msg_lspid = vres_get_id(resource);
