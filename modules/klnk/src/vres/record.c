@@ -69,7 +69,7 @@ int vres_record_save(char *path, vres_req_t *req, vres_index_t *index)
     vres_path_append_idx(name, *index);
     record = vres_file_get_entry(name, size, FILE_RDWR | FILE_CREAT);
     if (!record) {
-        log_err("failed to create");
+        log_warning("failed to create");
         vres_file_put_entry(checkin);
         return -ENOENT;
     } else {

@@ -49,7 +49,7 @@ static inline void klnk_barrier_get_desc(vres_t *resource, klnk_barrier_desc_t *
     desc->entry[1] = resource->cls;
     if (vres_get_op(resource) == VRES_OP_SHMFAULT) {
         desc->entry[2] = resource->owner;
-        desc->entry[3] = vres_get_off(resource);
+        desc->entry[3] = vres_get_pgno(resource);
     } else {
         desc->entry[2] = 0;
         desc->entry[3] = 0;
@@ -126,7 +126,7 @@ int klnk_barrier_wait(vres_t *resource)
     klnk_barrier_group_t *grp;
 
     if (!(barrier_stat & VRES_STAT_INIT)) {
-        log_err("invalid state");
+        log_warning("invalid state");
         return -EINVAL;
     }
     barrier = klnk_barrier_get(resource, &grp);
@@ -157,7 +157,7 @@ int klnk_barrier_wait_timeout(vres_t *resource, vres_time_t timeout)
     klnk_barrier_group_t *grp;
 
     if (!(barrier_stat & VRES_STAT_INIT)) {
-        log_err("invalid state");
+        log_warning("invalid state");
         return -EINVAL;
     }
     barrier = klnk_barrier_get(resource, &grp);
@@ -188,7 +188,7 @@ int klnk_barrier_set(vres_t *resource)
     klnk_barrier_group_t *grp;
 
     if (!(barrier_stat & VRES_STAT_INIT)) {
-        log_err("invalid state");
+        log_warning("invalid state");
         return -EINVAL;
     }
     klnk_barrier_get_desc(resource, &desc);
@@ -217,7 +217,7 @@ int klnk_barrier_clear(vres_t *resource)
     klnk_barrier_group_t *grp;
 
     if (!(barrier_stat & VRES_STAT_INIT)) {
-        log_err("invalid state");
+        log_warning("invalid state");
         return -EINVAL;
     }
     klnk_barrier_get_desc(resource, &desc);
@@ -227,7 +227,7 @@ int klnk_barrier_clear(vres_t *resource)
     if (!barrier) {
         barrier = klnk_barrier_alloc(&desc);
         if (!barrier) {
-            log_resource_err(resource, "no memory");
+            log_resource_warning(resource, "no memory");
             pthread_rwlock_unlock(&grp->lock);
             return -ENOMEM;
         }

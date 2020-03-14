@@ -11,7 +11,6 @@
 
 #include "log_dmgr.h"
 
-bool vres_dmgr_is_owner(vres_t *resource);
 bool vres_dmgr_page_own(vres_page_t *page);
 int vres_dmgr_check_resource(vres_t *resource);
 int vres_dmgr_forward(vres_page_t *page, vres_req_t *req);

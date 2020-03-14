@@ -1,5 +1,5 @@
-#ifndef _SYNC_H
-#define _SYNC_H
+#ifndef _SPECIAL_H
+#define _SPECIAL_H
 
 #include "resource.h"
 
@@ -11,7 +11,7 @@
 #endif
 #endif
 
-#include "log_sync.h"
+#include "log_special.h"
 
 typedef struct vres_sync_result {
     long retval;

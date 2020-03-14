@@ -15,4 +15,9 @@
 
 ## [0.0.4]
 - Adjust the interfaces of KLNK io
-- Fix issues in KLNK fast mode
+- Fix issues of KLNK fast mode
+
+## [0.0.5]
+- Remove live-time support of the proirity setting for distributed shared memory
+- Revise the preemption mechanism in scheduling the requests of distributed shared memory 
+- Add support of logical page

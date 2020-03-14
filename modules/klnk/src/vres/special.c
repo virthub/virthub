@@ -1,11 +1,11 @@
-/* sync.c
+/* special.c
  *
  * Copyright (C) 2019 Yi-Wei Ci
  *
  * Distributed under the terms of the MIT license.
  */
 
-#include "sync.h"
+#include "special.h"
 
 int vres_sync_request(vres_t *resource, vres_time_t *time)
 {

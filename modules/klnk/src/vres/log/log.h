@@ -59,12 +59,12 @@
 } while (0)
 
 #ifdef ERROR
-#define log_err(fmt, ...) log_alarm("error: in function %s " fmt " !!!", __func__, ##__VA_ARGS__)
+#define log_err(fmt, ...) log_alarm("[error]: in function %s, " fmt, __func__, ##__VA_ARGS__)
 #define log_resource_err(resource, fmt, ...) do { \
     if (vres_get_op(resource) == VRES_OP_SHMFAULT) \
-        log_err("(owner=%d, cls=%s, key=%d, src=%d, off=%lu), " fmt, (resource)->owner, log_get_cls((resource)->cls), (resource)->key, vres_get_id(resource), (unsigned long)vres_get_off(resource), ##__VA_ARGS__); \
+        log_alarm("[error]: in function %s (owner=%d, cls=%s, key=%d, src=%d, off=%lu), " fmt, __func__, (resource)->owner, log_get_cls((resource)->cls), (resource)->key, vres_get_id(resource), (unsigned long)vres_get_off(resource), ##__VA_ARGS__); \
     else \
-        log_err("(owner=%d, cls=%s, key=%d, src=%d), " fmt, (resource)->owner, log_get_cls((resource)->cls), (resource)->key, vres_get_id(resource), ##__VA_ARGS__); \
+        log_alarm("[error]: in function %s (owner=%d, cls=%s, key=%d, src=%d), " fmt,  __func__, (resource)->owner, log_get_cls((resource)->cls), (resource)->key, vres_get_id(resource), ##__VA_ARGS__); \
     assert(0); \
 } while (0)
 #else
@@ -76,10 +76,10 @@
 #define log_warning log_func
 #define log_resource_warning(resource, fmt, ...) do { \
     if (vres_get_op(resource) == VRES_OP_SHMFAULT) \
-        log_ln("warning: in function %s (owner=%d, clk=%s, key=%d, src=%d, off=%lu), " fmt, \
+        log_ln("[warning]: in function %s (owner=%d, clk=%s, key=%d, src=%d, off=%lu), " fmt, \
                __func__, (resource)->owner, log_get_cls((resource)->cls), (resource)->key, vres_get_id(resource), (unsigned long)vres_get_off(resource), ##__VA_ARGS__); \
     else \
-        log_ln("warning: in function %s (owner=%d, clk=%s, key=%d, src=%d), " fmt, \
+        log_ln("[warning]: in function %s (owner=%d, clk=%s, key=%d, src=%d), " fmt, \
                __func__, (resource)->owner, log_get_cls((resource)->cls), (resource)->key, vres_get_id(resource), ##__VA_ARGS__); \
 } while (0)
 #else

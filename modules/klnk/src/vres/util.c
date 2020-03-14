@@ -230,12 +230,12 @@ int vres_memget(unsigned long addr, size_t size, char **buf)
         init = true;
     }
     if(desc < 0) {
-        log_err("failed to open /dev/mem");
+        log_warning("failed to open /dev/mem");
         return -1;
     }
     *buf = mmap(0, size, PROT_READ | PROT_WRITE, MAP_SHARED, desc, addr);
     if (!buf || (MAP_FAILED == buf)) {
-        log_err("failed to access /dev/mem");
+        log_warning("failed to access /dev/mem");
         // close(desc);
         return -1;
     }
@@ -265,7 +265,7 @@ vres_reply_t *vres_reply_alloc(size_t size)
             reply->length = size;
         }
     } else
-        log_err("failed to generate reply, invalid size, size=%zu", size);
+        log_warning("failed to generate reply, invalid size, size=%zu", size);
     return reply;
 }
 

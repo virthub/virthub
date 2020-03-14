@@ -8,16 +8,14 @@
 #include "rwlock.h"
 #include "resource.h"
 
-#define VRES_PRIO_INIT_TIME
-// #define VRES_PRIO_MAP_MEMBER
-
+#define VRES_PRIO_SYNC_TIME
 #define VRES_PRIO_LOCK_GROUP_SIZE 256
 #define VRES_PRIO_LOCK_ENTRY_SIZE 3
-
 #define VRES_PRIO_RETRY_MAX       16
-#define VRES_PRIO_NR_REPEATS      2
+#define VRES_PRIO_NR_REPEATS      4
 #define VRES_PRIO_NR_INTERVALS    256
-#define VRES_PRIO_PERIOD          100000   // usec
+#define VRES_PRIO_PERIOD          200000   // usec
+#define VRES_PRIO_WAITTIME        (VRES_PRIO_PERIOD / 100)
 #define VRES_PRIO_SYNC_INTV       5000000  // usec
 
 #ifdef VRES_PRIO_MAP_MEMBER
@@ -49,10 +47,6 @@ typedef struct vres_prio {
     vres_time_t t_off;
     vres_time_t t_sync;
     vres_time_t t_update;
-#ifdef ENABLE_LIVE_TIME
-    vres_time_t t_live;
-    int val;
-#endif
 } vres_prio_t;
 
 typedef unsigned long vres_prio_lock_entry_t;
@@ -75,14 +69,12 @@ typedef struct {
 } vres_prio_lock_t;
 
 void vres_prio_init();
+int vres_prio_save(vres_req_t *req);
 int vres_prio_monitor(vres_req_t *req);
 int vres_prio_set_idle(vres_t *resource);
 int vres_prio_set_busy(vres_t *resource);
 int vres_prio_sync_time(vres_t *resource);
 int vres_prio_check(vres_req_t *req, int flags);
 int vres_prio_create(vres_t *resource, bool sync);
-#ifdef ENABLE_LIVE_TIME
-int vres_prio_check_live_time(vres_t *resource, int *prio, vres_time_t *live);
-#endif
 
 #endif

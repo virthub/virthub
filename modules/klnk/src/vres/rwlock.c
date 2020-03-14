@@ -76,7 +76,7 @@ static inline vres_rwlock_t *vres_rwlock_lookup(vres_rwlock_group_t *group, vres
 static inline void vres_rwlock_insert(vres_rwlock_group_t *group, vres_rwlock_t *lock)
 {
     if (rbtree_insert(&group->tree, &lock->desc, &lock->node))
-        log_err("failed");
+        log_warning("failed");
 }
 
 
@@ -93,7 +93,7 @@ static inline vres_rwlock_t *vres_rwlock_get(vres_t *resource)
     if (!lock) {
         lock = vres_rwlock_alloc(&desc);
         if (!lock) {
-            log_resource_err(resource, "no memory");
+            log_resource_warning(resource, "no memory");
             goto out;
         }
         vres_rwlock_insert(grp, lock);
@@ -111,12 +111,12 @@ int vres_rwlock_rdlock(vres_t *resource)
     vres_rwlock_t *lock;
 
     if (!(rwlock_stat & VRES_STAT_INIT)) {
-        log_err("invalid state");
+        log_warning("invalid state");
         return -EINVAL;
     }
     lock = vres_rwlock_get(resource);
     if (!lock) {
-        log_resource_err(resource, "no entry");
+        log_resource_warning(resource, "no entry");
         return -ENOENT;
     }
     pthread_rwlock_rdlock(&lock->lock);
@@ -130,12 +130,12 @@ int vres_rwlock_wrlock(vres_t *resource)
     vres_rwlock_t *lock;
 
     if (!(rwlock_stat & VRES_STAT_INIT)) {
-        log_err("invalid state");
+        log_warning("invalid state");
         return -EINVAL;
     }
     lock = vres_rwlock_get(resource);
     if (!lock) {
-        log_resource_err(resource, "no entry");
+        log_resource_warning(resource, "no entry");
         return -ENOENT;
     }
     pthread_rwlock_wrlock(&lock->lock);
@@ -150,12 +150,12 @@ int vres_rwlock_trywrlock(vres_t *resource)
     vres_rwlock_t *lock;
 
     if (!(rwlock_stat & VRES_STAT_INIT)) {
-        log_err("invalid state");
+        log_warning("invalid state");
         return -EINVAL;
     }
     lock = vres_rwlock_get(resource);
     if (!lock) {
-        log_resource_err(resource, "no entry");
+        log_resource_warning(resource, "no entry");
         return -ENOENT;
     }
     ret = pthread_rwlock_trywrlock(&lock->lock);
@@ -169,12 +169,12 @@ void vres_rwlock_unlock(vres_t *resource)
     vres_rwlock_t *lock;
 
     if (!(rwlock_stat & VRES_STAT_INIT)) {
-        log_err("invalid state");
+        log_warning("invalid state");
         return;
     }
     lock = vres_rwlock_get(resource);
     if (!lock) {
-        log_resource_err(resource, "no entry");
+        log_resource_warning(resource, "no entry");
         return;
     }
     log_rwlock_unlock(resource, "lock=0x%lx", (unsigned long)lock);

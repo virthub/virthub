@@ -21,10 +21,10 @@ void vres_metadata_init()
     metadata_ctx = redisConnect(master_addr, MDS_PORT);
     if (!metadata_ctx || metadata_ctx->err) {
         if (metadata_ctx) {
-            log_err("failed to connect, %s", metadata_ctx->errstr);
+            log_warning("failed to connect, %s", metadata_ctx->errstr);
             redisFree(metadata_ctx);
         } else
-            log_err("invalid context");
+            log_warning("invalid context");
         exit(1);
     }
     pthread_mutex_init(&metadata_mutex, NULL);
@@ -51,7 +51,7 @@ int vres_metadata_read(char *path, char *buf, int len)
         return 0;
     ret = vres_metadata_check_path(path);
     if (ret < 0) {
-        log_err("invalid path");
+        log_warning("invalid path");
         return ret;
     }
     log_metadata_read(path);
@@ -70,7 +70,7 @@ int vres_metadata_read(char *path, char *buf, int len)
     freeReplyObject(reply);
     pthread_mutex_unlock(&metadata_mutex);
     if (ret)
-        log_err("invalid reply");
+        log_warning("invalid reply");
     return ret;
 }
 
@@ -84,7 +84,7 @@ int vres_metadata_write(char *path, char *buf, int len)
         return 0;
     ret = vres_metadata_check_path(path);
     if (ret < 0) {
-        log_err("invalid path");
+        log_warning("invalid path");
         return ret;
     }
     pthread_mutex_lock(&metadata_mutex);
@@ -101,7 +101,7 @@ bool vres_metadata_exists(char *path)
     redisReply *reply;
 
     if (vres_metadata_check_path(path) < 0) {
-        log_err("invalid path");
+        log_warning("invalid path");
         return ret;
     }
     pthread_mutex_lock(&metadata_mutex);
@@ -135,7 +135,7 @@ int vres_metadata_remove(char *path)
     int ret = vres_metadata_check_path(path);
 
     if (ret < 0) {
-        log_err("invalid path");
+        log_warning("invalid path");
         return ret;
     }
     pthread_mutex_lock(&metadata_mutex);
@@ -154,7 +154,7 @@ int vres_metadata_count(char *path)
     int ret = vres_metadata_check_path(path);
 
     if (ret < 0) {
-        log_err("invalid path");
+        log_warning("invalid path");
         return ret;
     }
     strcpy(cursor, "0");
@@ -166,7 +166,7 @@ int vres_metadata_count(char *path)
                 strncpy(cursor, reply->element[0]->str, CURSOR_SIZE);
                 count += reply->element[1]->elements;
             } else {
-                log_err("invalid reply");
+                log_warning("invalid reply");
                 freeReplyObject(reply);
                 count = -EINVAL;
                 goto out;
@@ -174,7 +174,7 @@ int vres_metadata_count(char *path)
         }
         freeReplyObject(reply);
         if (count > CURSOR_MAX) {
-            log_err("too much elements");
+            log_warning("too much elements");
             count = -EINVAL;
             goto out;
         }
@@ -195,7 +195,7 @@ unsigned long vres_metadata_max(char *path)
     char cursor[CURSOR_SIZE];
 
     if (vres_metadata_check_path(path) < 0) {
-        log_err("invalid path");
+        log_warning("invalid path");
         return 0;
     }
     off = strlen(path) + 1;
@@ -210,7 +210,7 @@ unsigned long vres_metadata_max(char *path)
 
                 count += elements;
                 if (count > CURSOR_MAX) {
-                    log_err("too much elements");
+                    log_warning("too much elements");
                     freeReplyObject(reply);
                     val = 0;
                     goto out;
@@ -228,7 +228,7 @@ unsigned long vres_metadata_max(char *path)
                 }
                 strncpy(cursor, reply->element[0]->str, CURSOR_SIZE);
             } else {
-                log_err("invalid reply");
+                log_warning("invalid reply");
                 freeReplyObject(reply);
                 val = 0;
                 goto out;

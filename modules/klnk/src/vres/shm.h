@@ -4,6 +4,7 @@
 #include <sys/ipc.h>
 #include <sys/shm.h>
 #include "resource.h"
+#include "special.h"
 #include "rwlock.h"
 #include "record.h"
 #include "event.h"
@@ -14,14 +15,16 @@
 #include "redo.h"
 #include "prio.h"
 #include "wait.h"
-#include "sync.h"
 #include "line.h"
 #include "tsk.h"
 
-#define VRES_SHM_NR_PEERS   (VRES_PAGE_NR_HOLDERS - 1)
+// #define VRES_SHM_EXTEND_HOLD_TIME
+
+#define VRES_SHM_PEER_MAX   4
+#define VRES_SHM_NR_PEERS   (VRES_SHM_PEER_MAX > (VRES_PAGE_NR_HOLDERS - 1) ? (VRES_PAGE_NR_HOLDERS - 1) : VRES_SHM_PEER_MAX)
 #define VRES_SHM_NR_AREAS   4
 #define VRES_SHM_NR_VISITS  2
-#define VRES_SHM_WRITE_INTV 5000 // usec
+#define VRES_SHM_HOLD_INTV  5000 // usec
 
 #define VRES_SHMMAX         0x2000000                                         /* max shared seg size (bytes) */
 #define VRES_SHMMIN         1                                                 /* min shared seg size (bytes) */
@@ -36,7 +39,7 @@
 #define LOG_SHM_LINE_NUM
 #define LOG_SHM_SAVE_REQ
 #define LOG_SHM_GET_ARGS
-#define LOG_SHM_FAST_REPLY
+#define LOG_SHM_SPEC_REPLY
 #define LOG_SHM_CHECK_REPLY
 #define LOG_SHM_CHECK_OWNER
 #define LOG_SHM_EXPIRED_REQ
@@ -45,19 +48,19 @@
 #define LOG_SHM_REQUEST_OWNER
 #define LOG_SHM_GET_PEER_INFO
 #define LOG_SHM_NOTIFY_HOLDER
+#define LOG_SHM_DO_CHECK_OWNER
+#define LOG_SHM_DO_CHECK_HOLDER
 #define LOG_SHM_HANDLE_ZEROPAGE
 #define LOG_SHM_NOTIFY_PROPOSER
 #define LOG_SHM_REQUEST_HOLDERS
-#define LOG_SHM_CHECK_FAST_REPLY
-#define LOG_SHM_CHECK_ACTIVE_OWNER
-#define LOG_SHM_CHECK_ACTIVE_HOLDER
+#define LOG_SHM_CHECK_SPEC_REPLY
 #define LOG_SHM_REQUEST_SILENT_HOLERS
 
 #ifdef SHOW_MORE
+#define LOG_SHM_REPLY
 #define LOG_SHM_LINES
 #define LOG_SHM_RECORD
 #define LOG_SHM_WAKEUP
-#define LOG_SHM_BYPASS
 #define LOG_SHM_SAVE_PAGE
 #define LOG_SHM_PAGE_DIFF
 #define LOG_SHM_CHECK_ARGS
@@ -87,10 +90,6 @@ typedef struct {
     int cmd;
 #ifdef ENABLE_TTL
     int ttl;
-#endif
-#ifdef ENABLE_LIVE_TIME
-    int prio;           // priority
-    vres_time_t live;   // live time
 #endif
     vres_clk_t clk;
     vres_index_t index;
