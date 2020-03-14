@@ -41,7 +41,7 @@ int vres_file_dirname(char *path, char *dirname)
     int lst = strlen(path) - 1;
 
     if (lst < 0) {
-        log_err("failed");
+        log_warning("invalid path");
         return -1;
     }
     if (FILE_SEPARATOR == path[lst])
@@ -49,7 +49,7 @@ int vres_file_dirname(char *path, char *dirname)
     while ((lst >= 0) && (path[lst] != FILE_SEPARATOR))
         lst--;
     if (lst < 0) {
-        log_err("failed");
+        log_warning("invalid path");
         return -1;
     }
     memcpy(dirname, path, lst + 1);
@@ -91,8 +91,10 @@ static inline int vres_file_calloc(vres_file_t *filp, size_t size)
 
         if (size > 0) {
             buf = calloc(1, size);
-            if (!buf)
+            if (!buf) {
+                log_warning("no memory");
                 return -ENOMEM;
+            }
         }
         if (filp->f_buf)
             free(filp->f_buf);
@@ -100,8 +102,10 @@ static inline int vres_file_calloc(vres_file_t *filp, size_t size)
         filp->f_size = size;
         filp->f_buf = buf;
         return 0;
+    } else {
+        log_warning("invalid file, filp=0x%lx, size=%d", (unsigned long)filp, size);
+        return -EINVAL;
     }
-    return -EINVAL;
 }
 
 
@@ -176,7 +180,7 @@ static inline vres_file_dir_t *vres_file_lookup_dir(const char *path)
         key = (void *)path;
     else {
         if (FILE_PATH_MAX - 1 == len) {
-            log_err("invalid path");
+            log_warning("invalid path");
             return NULL;
         }
         sprintf(dirname, "%s%c", path, FILE_SEPARATOR);
@@ -218,7 +222,7 @@ static inline int vres_file_push(char *path)
     char dirname[FILE_PATH_MAX];
 
     if (vres_file_dirname(path, dirname)) {
-        log_err("invalid path, path=%s", path);
+        log_warning("invalid path, path=%s", path);
         return -1;
     }
     filename = path + strlen(dirname);
@@ -227,12 +231,12 @@ static inline int vres_file_push(char *path)
         vres_file_name_t *name = vres_file_alloc_name(filename);
 
         if (!name) {
-            log_err("failed to allocate, path=%s", path);
+            log_warning("failed to allocate, path=%s", path);
             return -1;
         }
         dir = vres_file_lookup_dir(dirname);
         if (!dir) {
-            log_err("failed to find directory %s", dirname);
+            log_warning("failed to find directory %s", dirname);
             free(name);
             return -1;
         }
@@ -242,7 +246,7 @@ static inline int vres_file_push(char *path)
         pthread_rwlock_unlock(&dir->d_lock);
         log_file_dir_push(dirname, filename);
     } else {
-        log_err("invalid path, path=%s", path);
+        log_warning("invalid path, path=%s", path);
         return -1;
     }
     return 0;
@@ -256,7 +260,7 @@ static inline int vres_file_pop(char *path)
     char dirname[FILE_PATH_MAX];
 
     if (vres_file_dirname(path, dirname)) {
-        log_err("invalid path, path=%s", path);
+        log_warning("invalid path, path=%s", path);
         return -1;
     }
     filename = path + strlen(dirname);
@@ -280,7 +284,7 @@ static inline int vres_file_pop(char *path)
         }
         pthread_rwlock_unlock(&dir->d_lock);
     } else {
-        log_err("invalid path, path=%s", path);
+        log_warning("invalid path, path=%s", path);
         return -1;
     }
     return 0;
@@ -393,11 +397,11 @@ vres_file_t *vres_file_open(char *path, const char *mode)
     size_t len = strlen(path);
 
     if (vres_file_stat != FILE_STAT_INIT) {
-        log_err("invalid state");
+        log_warning("invalid state");
         return NULL;
     }
     if ((len >= FILE_PATH_MAX) || (FILE_SEPARATOR == path[len - 1])) {
-        log_err("invalid path");
+        log_warning("invalid path");
         return NULL;
     }
     file = vres_file_lookup_file(path);
@@ -406,12 +410,12 @@ vres_file_t *vres_file_open(char *path, const char *mode)
             if (!vres_file_push(path)) {
                 file = vres_file_create_file(path);
                 if (!file) {
-                    log_err("failed to create, path=%s", path);
+                    log_warning("failed to create, path=%s", path);
                     vres_file_pop(path);
                     return NULL;
                 }
             } else {
-                log_err("failed, path=%s", path);
+                log_warning("failed, path=%s", path);
                 return NULL;
             }
         }
@@ -433,11 +437,11 @@ int vres_file_access(char *path, int mode)
     size_t len = strlen(path);
 
     if (vres_file_stat != FILE_STAT_INIT) {
-        log_err("invalid state");
+        log_warning("invalid state");
         return -1;
     }
     if (!len || (len >= FILE_PATH_MAX)) {
-        log_err("invalid path");
+        log_warning("invalid path");
         return -1;
     }
     if (F_OK == mode)
@@ -466,11 +470,11 @@ int vres_file_mkdir(char *path)
     char dirname[FILE_PATH_MAX] = {0};
 
     if (vres_file_stat != FILE_STAT_INIT) {
-        log_err("invalid state");
+        log_warning("invalid state");
         return -1;
     }
     if (!len || (len >= FILE_PATH_MAX)) {
-        log_err("invalid path");
+        log_warning("invalid path");
         return -1;
     }
     if (!vres_file_is_root(path)) {
@@ -478,7 +482,7 @@ int vres_file_mkdir(char *path)
         if (!vres_file_is_root(dirname)) {
             if (!vres_file_is_dir(dirname)) {
                 if (vres_file_mkdir(dirname) < 0) {
-                    log_err("faile to create, path=%s", path);
+                    log_warning("faile to create, path=%s", path);
                     return -1;
                 }
             }
@@ -488,7 +492,7 @@ int vres_file_mkdir(char *path)
         name = path;
     else {
         if (FILE_PATH_MAX - 1 == len) {
-            log_err("invalid path");
+            log_warning("invalid path");
             return -1;
         }
         sprintf(dirname, "%s%c", path, FILE_SEPARATOR);
@@ -496,12 +500,12 @@ int vres_file_mkdir(char *path)
     }
     if (!vres_file_is_root(path)) {
         if (vres_file_push(name)) {
-            log_err("failed to push, path=%s", name);
+            log_warning("failed to push, path=%s", name);
             return -1;
         }
     }
     if (!vres_file_create_dir(name)) {
-        log_err("failed to create, path=%s", name);
+        log_warning("failed to create, path=%s", name);
         if (!vres_file_is_root(path))
             vres_file_pop(name);
         return -1;
@@ -536,7 +540,7 @@ int vres_file_do_handle_file(rbtree_node_t *node, vres_file_callback_t func, cha
         if (dir)
             return vres_file_do_handle_file(dir->d_tree.root, func, dir->d_path, arg);
         else {
-            log_err("invalid path");
+            log_warning("invalid path");
             return -1;
         }
     } else {
@@ -552,7 +556,7 @@ int vres_file_handle_file(vres_file_callback_t func, char *path, void *arg)
     vres_file_dir_t *dir;
 
     if (vres_file_stat != FILE_STAT_INIT) {
-        log_err("invalid state");
+        log_warning("invalid state");
         return 0;
     }
     dir = vres_file_lookup_dir(path);
@@ -593,7 +597,7 @@ int vres_file_do_handle_dir(rbtree_node_t *node, vres_file_callback_t func, char
             log_file_handle_dir(name);
             return ret;
         } else {
-            log_err("invalid path");
+            log_warning("invalid path");
             return -1;
         }
     }
@@ -606,7 +610,7 @@ int vres_file_handle_dir(vres_file_callback_t func, char *path, void *arg)
     vres_file_dir_t *dir;
 
     if (vres_file_stat != FILE_STAT_INIT) {
-        log_err("invalid state");
+        log_warning("invalid state");
         return 0;
     }
     dir = vres_file_lookup_dir(path);
@@ -630,14 +634,14 @@ int vres_file_release_dir(vres_file_dir_t *dir)
 
         node = dir->d_tree.root;
         if (!node) {
-            log_err("invalid directory");
+            log_warning("invalid directory");
             ret = -1;
             goto out;
         }
         name = (char *)node->key;
         len = strlen(name);
         if (!len || (len >= FILE_PATH_MAX)) {
-            log_err("invalid path");
+            log_warning("invalid path");
             ret = -1;
             goto out;
         }
@@ -645,7 +649,7 @@ int vres_file_release_dir(vres_file_dir_t *dir)
         sprintf(path, "%s%s", dir->d_path, name);
         if (FILE_SEPARATOR == name[len - 1]) {
             if (vres_file_rmdir(path)) {
-                log_err("failed to remove %s", path);
+                log_warning("failed to remove %s", path);
                 ret = -1;
                 goto out;
             }
@@ -681,20 +685,20 @@ int vres_file_rmdir(char *path)
     vres_file_dir_t *dir;
 
     if (vres_file_stat != FILE_STAT_INIT) {
-        log_err("invalid state");
+        log_warning("invalid state");
         return -1;
     }
     dir = vres_file_lookup_dir(path);
     if (!dir) {
-        log_err("no directory, path=%s", path);
+        log_warning("no directory, path=%s", path);
         return -1;
     }
     if (vres_file_pop(dir->d_path)) {
-        log_err("failed to remove, path=%s", path);
+        log_warning("failed to remove, path=%s", path);
         return -1;
     }
     if (vres_file_release_dir(dir)) {
-        log_err("failed to release, path=%s", path);
+        log_warning("failed to release, path=%s", path);
         return -1;
     }
     log_file_rmdir(path);
@@ -707,16 +711,16 @@ int vres_file_remove(char *path)
     size_t len;
 
     if (vres_file_stat != FILE_STAT_INIT) {
-        log_err("invalid state");
+        log_warning("invalid state");
         return -1;
     }
     len = strlen(path);
     if (!len || (len >= FILE_PATH_MAX)) {
-        log_err("invalid path");
+        log_warning("invalid path");
         return -1;
     }
     if (FILE_SEPARATOR == path[len - 1]) {
-        log_err("invalid path");
+        log_warning("invalid path");
         return -1;
     } else {
         if (vres_file_pop(path))

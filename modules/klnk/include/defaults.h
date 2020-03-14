@@ -11,24 +11,16 @@
 #endif
 
 #define ENABLE_PRIORITY
-#define ENABLE_WRITE_EXT
-#define ENABLE_LIVE_TIME
-// #define ENABLE_FAST_REPLY
 #define ENABLE_DYNAMIC_OWNER
-
+#define ENABLE_SPEC          // speculative mode
+// #define ENABLE_PAGE_CHECK    // this setting must be enabled if a stronger consistency is required
 // #define ENABLE_TTL
 // #define ENABLE_PGSAVE
 // #define ENABLE_TSKPUT
 // #define ENABLE_BARRIER
 // #define ENABLE_TIME_SYNC
-// #define ENABLE_PAGE_PRESENT
-// #define ENABLE_LASY_PAGE_CHECK
 
-#if defined(ENABLE_LASY_PAGE_CHECK) || !defined(ENABLE_PAGE_PRESENT)
-#define PAGE_CHECK_MAX 256
-#else
-#define PAGE_CHECK_MAX 0
-#endif
+#define PAGE_CHECK_MAX -1
 
 #ifdef SHOW_KLNK
 #define LOG_KLNK_OPEN

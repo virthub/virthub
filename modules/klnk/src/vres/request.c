@@ -19,18 +19,18 @@ int vres_request_join(vres_t *resource, vres_join_result_t **result)
         size  = sizeof(vres_join_result_t) + VRES_MEMBER_MAX * sizeof(vres_id_t);
         p = (vres_join_result_t *)malloc(size);
         if (!p) {
-            log_resource_err(resource, "no memory");
+            log_resource_warning(resource, "no memory");
             return -ENOMEM;
         }
     }
     vres_set_op(&res, VRES_OP_JOIN);
     ret = klnk_io_sync(&res, NULL, 0, (char *)p, size, -1);
     if (ret) {
-        log_resource_err(resource, "failed to join");
+        log_resource_warning(resource, "failed to join");
         goto out;
     }
     if (p && p->retval) {
-        log_resource_err(resource, "failed to get members");
+        log_resource_warning(resource, "failed to get members");
         ret = -EINVAL;
         goto out;
     }
@@ -51,7 +51,7 @@ int vres_request_leave(vres_t *resource)
     vres_set_op(&res, VRES_OP_LEAVE);
     ret = klnk_io_sync(&res, NULL, 0, (char *)&result, sizeof(vres_leave_result_t), -1);
     if (ret || (result.retval && (result.retval != -ENOOWNER))) {
-        log_resource_err(resource, "failed to leave");
+        log_resource_warning(resource, "failed to leave");
         return -EFAULT;
     }
     return 0;

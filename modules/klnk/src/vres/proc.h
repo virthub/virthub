@@ -8,9 +8,9 @@
 #include "ipc.h"
 #include "mig.h"
 #include "util.h"
-#include "sync.h"
 #include "dump.h"
 #include "trace.h"
+#include "special.h"
 #include "restore.h"
 #include "resource.h"
 

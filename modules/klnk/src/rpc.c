@@ -32,7 +32,7 @@ int klnk_rpc_check(vres_t *resource, unsigned long addr, size_t inlen, size_t ou
         int desc = vres_memget(addr, size, &buf);
 
         if (desc < 0) {
-            log_resource_err(resource, "failed to get mem");
+            log_resource_warning(resource, "failed to get mem");
             return -EINVAL;
         }
         // arg->desc = desc;
@@ -87,7 +87,7 @@ int klnk_rpc_get(vres_t *resource, unsigned long addr, size_t inlen, size_t outl
     }
     if (ret) {
         if (ret != -EOK)
-            log_resource_err(resource, "failed, ret=%s", log_get_err(ret));
+            log_resource_warning(resource, "failed, ret=%s", log_get_err(ret));
         klnk_rpc_release(arg);
     }
     return ret;
@@ -114,12 +114,13 @@ int klnk_rpc_wait(vres_arg_t *arg)
     vres_set_off(&res, arg->index);
     ret = vres_event_wait(&res, arg->out, arg->outlen, arg->timeout);
     if (arg->timeout && (-ETIMEDOUT == ret)) {
+        assert(res.cls != VRES_OP_SHMFAULT);
         if (vres_request_cancel(arg, arg->index)) {
-            log_resource_err(&res, "timeout, failed to cancel");
+            log_resource_warning(&res, "timeout, failed to cancel");
             ret = -EFAULT;
         }
     } else if (ret)
-        log_resource_err(&res, "ret=%s", log_get_err(ret));
+        log_resource_warning(&res, "ret=%s", log_get_err(ret));
     log_klnk_rpc_wait(&res, ">-- rpc_wait (end) --<");
     return ret;
 }
@@ -140,7 +141,7 @@ int klnk_rpc_send(vres_arg_t *arg)
             arg->index = vres_err_to_index(ret);
             ret = 0;
         } else
-            log_resource_err(&arg->resource, "failed, ret=%s", log_get_err(ret));
+            log_resource_warning(&arg->resource, "failed, ret=%s", log_get_err(ret));
     }
     return ret;
 }
@@ -159,13 +160,13 @@ int klnk_rpc_send_to_peers(vres_arg_t *arg)
         pthread_t threads[KLNK_PEER_MAX];
 
         if (arg->peers->total > KLNK_PEER_MAX) {
-            log_resource_err(resource, "too much peers (total=%d)", arg->peers->total);
+            log_resource_warning(resource, "too much peers (total=%d)", arg->peers->total);
             return -EINVAL;
         }
         for (i = 0; i < arg->peers->total; i++) {
             ret = klnk_io_create(&threads[i], arg->peers->list[i], arg, false);
             if (ret) {
-                log_resource_err(resource, "failed, ret=%s", log_get_err(ret));
+                log_resource_warning(resource, "failed, ret=%s", log_get_err(ret));
                 break;
             }
             count++;

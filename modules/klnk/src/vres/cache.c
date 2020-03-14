@@ -130,7 +130,7 @@ int vres_cache_write(vres_t *resource, char *buf, size_t len)
     if (!cache) {
         cache = vres_cache_alloc(&desc, len);
         if (!cache) {
-            log_resource_err(resource, "no memory");
+            log_resource_warning(resource, "no memory");
             ret = -ENOMEM;
             goto out;
         }
@@ -140,7 +140,7 @@ int vres_cache_write(vres_t *resource, char *buf, size_t len)
     } else {
         ret = vres_cache_realloc(cache, len);
         if (ret) {
-            log_resource_err(resource, "failed to write cache");
+            log_resource_warning(resource, "failed to write cache");
             goto out;
         }
     }

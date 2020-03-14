@@ -18,7 +18,7 @@ static inline unsigned long vres_get_queue(vres_entry_t *entry)
         queue = 1;
         break;
     case VRES_OP_SHMFAULT:
-        queue = vres_entry_off(entry);
+        queue = vres_entry_pgno(entry);
         break;
     default:
         queue = 0;
@@ -216,7 +216,7 @@ int vres_mkdir(vres_t *resource)
     if (!vres_file_is_dir(path)) {
         ret = vres_file_mkdir(path);
         if (ret) {
-            log_resource_err(resource, "failed to create directory");
+            log_resource_warning(resource, "failed to create directory");
             return ret;
         }
     }
@@ -224,7 +224,7 @@ int vres_mkdir(vres_t *resource)
     if (!vres_file_is_dir(path)) {
         ret = vres_file_mkdir(path);
         if (ret) {
-            log_resource_err(resource, "failed to create directory");
+            log_resource_warning(resource, "failed to create directory");
             return ret;
         }
     }
@@ -232,7 +232,7 @@ int vres_mkdir(vres_t *resource)
     if (!vres_file_is_dir(path)) {
         ret = vres_file_mkdir(path);
         if (ret) {
-            log_resource_err(resource, "failed to create directory");
+            log_resource_warning(resource, "failed to create directory");
             return ret;
         }
     }

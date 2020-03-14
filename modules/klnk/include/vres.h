@@ -18,9 +18,8 @@
 #define AREA_MANAGER     0
 #define STATIC_MANAGER   1
 #define DYNAMIC_MANAGER  2
-
+  
 #define PAGE_SIZE        4096
-#define PAGE_SHIFT       12
 #define BITS_PER_BYTE    8
 #define NODE_NAME_SIZE   9
 #define LEN_LISTEN_QUEUE 16
@@ -35,16 +34,18 @@
 #define VRES_POS_VAL2    3
 #define VRES_POS_INDEX   3
 
+#define VRES_PAGE_SHIFT  4 // merge a set of continuous pages (the number of pages is 1 << VRES_PAGE_SHIFT) into one logical page
+#define VRES_PAGE_SIZE   (PAGE_SIZE << VRES_PAGE_SHIFT)
 #define VRES_RDONLY      0x0001
 #define VRES_RDWR        0x0002
 #define VRES_CREAT       0x0004
 #define VRES_CHOWN       0x0008
-#define VRES_CAND        0x0010
 #define VRES_CANCEL      0x0020
 #define VRES_DIFF        0x0040
 #define VRES_CRIT        0x0080
 #define VRES_REDO        0x0100
 #define VRES_PRIO        0x0200
+#define VRES_PRESENT     0x0400
 
 #define VRES_STAT_INIT   1
 #define VRES_TTL_MAX     128
@@ -101,8 +102,8 @@ enum vres_operation {
 #define VRES_ERRNO_MAX   1000
 #define VRES_KEY_MAX     0x7fffffff
 #define VRES_ID_MAX      0x7fffffff
-#define VRES_IO_MAX      ((1 << 14) - 1)
-#define VRES_BUF_MAX     ((1 << 16) - 1)
+#define VRES_IO_MAX      (1 << 20)
+#define VRES_BUF_MAX     (1 << 20)
 #define VRES_INDEX_MAX   ((1 << 30) - 1)
 #define VRES_MANAGER_MAX 16
 #define VRES_REPLY_MAX   8192

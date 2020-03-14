@@ -12,16 +12,16 @@ int klnk_io_get_output(klnk_desc_t desc, char *buf, size_t size)
     int ret = 0;
 
     if (klnk_recv(desc, (char *)&ret, sizeof(int)) < 0) {
-        log_err("failed to receive");
+        log_warning("failed to receive");
         return -EIO;
     }
     if (ret > 0) {
         if (ret > size) {
-            log_err("invalid length");
+            log_warning("invalid length");
             return -EINVAL;
         }
         if (klnk_recv(desc, buf, ret) < 0) {
-            log_err("failed to receive");
+            log_warning("failed to receive");
             return -EIO;
         }
         ret = 0;
@@ -30,9 +30,8 @@ int klnk_io_get_output(klnk_desc_t desc, char *buf, size_t size)
 }
 
 
-// If dest is set to -1, the request is sent to the resource owner by default
 EVAL_DECL(klnk_io_sync);
-int klnk_io_sync(vres_t *resource, char *in, size_t inlen, char *out, size_t outlen, vres_id_t dest)
+int klnk_io_sync(vres_t *resource, char *in, size_t inlen, char *out, size_t outlen, vres_id_t dest) // If dest is set to -1, the request is sent to the resource owner by default
 {
     int ret = 0;
     int retry = 0;
@@ -44,7 +43,7 @@ int klnk_io_sync(vres_t *resource, char *in, size_t inlen, char *out, size_t out
 
     EVAL_START(klnk_io_sync);
     if ((inlen > KLNK_IO_MAX) || (outlen > KLNK_IO_MAX)) {
-        log_err("invalid parameters");
+        log_warning("invalid parameters");
         return -EINVAL;
     }
     log_klnk_io_sync(resource, dest, "start ...");
@@ -52,20 +51,20 @@ again:
     if (dest == -1) {
         ret = vres_lookup(resource, &peer);
         if (ret) {
-            log_err("failed to lookup (ret=%s)", log_get_err(ret));
+            log_warning("failed to lookup (ret=%s)", log_get_err(ret));
             goto release;
         }
     } else {
         ret = vres_get_peer(dest, &peer);
         if (ret) {
-            log_err("failed to get peer %d (ret=%s)", dest, log_get_err(ret));
+            log_warning("failed to get peer %d (ret=%s)", dest, log_get_err(ret));
             goto release;
         }
     }
     if (!buf) {
         buf = malloc(buflen);
         if (!buf) {
-            log_err("no memory");
+            log_warning("no memory");
             ret = -ENOMEM;
             goto release;
         }
@@ -82,23 +81,23 @@ again:
     log_klnk_io_sync_connect(resource, peer, dest);
     desc = klnk_connect(peer.address, KLNK_PORT);
     if (desc < 0) {
-        log_err("failed to connect to %s (ret=%s)", addr2str(peer.address), log_get_err(desc));
+        log_warning("failed to connect to %s (ret=%s)", addr2str(peer.address), log_get_err(desc));
         ret = -EFAULT;
         goto retry;
     }
     log_klnk_io_sync_send(resource);
     ret = klnk_send(desc, buf, buflen);
     if (ret) {
-        log_err("failed to send to %s (ret=%s)", addr2str(peer.address), log_get_err(ret));
+        log_warning("failed to send to %s (ret=%s)", addr2str(peer.address), log_get_err(ret));
         goto retry;
     }
     log_klnk_io_sync_output(resource);
     ret = klnk_io_get_output(desc, out, outlen);
     if (-ENOOWNER == ret) {
         if (dest != -1)
-            log_err("no owner (dest=%d, owner=%d, addr=%s)", dest, req->resource.owner, addr2str(peer.address));
+            log_warning("no owner (dest=%d, owner=%d, addr=%s)", dest, req->resource.owner, addr2str(peer.address));
         else
-            log_err("no owner (owner=%d, addr=%s)", req->resource.owner, addr2str(peer.address));
+            log_warning("no owner (owner=%d, addr=%s)", req->resource.owner, addr2str(peer.address));
         vres_cache_flush(resource);
         goto retry;
     }
@@ -117,9 +116,9 @@ retry:
         goto again;
     } else {
         if (dest != -1)
-            log_err("failed to send (reaching the maximum retry attempts, dest=%d, owner=%d)", dest, req->resource.owner);
+            log_warning("failed to send (reaching the maximum retry attempts, dest=%d, owner=%d)", dest, req->resource.owner);
         else
-            log_err("failed to send (reaching the maximum retry attempts, owner=%d)", req->resource.owner);
+            log_warning("failed to send (reaching the maximum retry attempts, owner=%d)", req->resource.owner);
     }
     free(req);
     return ret;
@@ -137,7 +136,7 @@ static void *klnk_io_do_create(void *buf)
 
     ret = klnk_io_sync(resource, arg->in, arg->inlen, arg->out, arg->outlen, dest);
     if (ret)
-        log_resource_err(resource, "failed to send (ret=%s)", log_get_err(ret));
+        log_resource_warning(resource, "failed to send (ret=%s)", log_get_err(ret));
     if (release)
         free(arg);
     free(buf);
@@ -162,7 +161,7 @@ int klnk_io_create(pthread_t *thread, vres_id_t dest, vres_arg_t *arg, bool rele
     ret = pthread_create(thread, &attr, klnk_io_do_create, (void *)karg);
     pthread_attr_destroy(&attr);
     if (ret)
-        log_resource_err(&arg->resource, "failed to create io");
+        log_resource_warning(&arg->resource, "failed to create io");
 }
 
 
@@ -172,7 +171,7 @@ int klnk_io_async(vres_t *resource, char *in, size_t inlen, char *out, size_t ou
     vres_arg_t *arg = (vres_arg_t *)calloc(1, sizeof(vres_arg_t));
 
     if (!arg) {
-        log_err("no memory");
+        log_warning("no memory");
         return -ENOMEM;
     }
     arg->in = in;
@@ -194,12 +193,12 @@ int klnk_io_sync_by_addr(vres_t *resource, char *in, size_t inlen, char *out, si
     int buflen = sizeof(vres_req_t) + inlen;
 
     if ((inlen > KLNK_IO_MAX) || (outlen > KLNK_IO_MAX)) {
-        log_err("invalid parameters");
+        log_warning("invalid parameters");
         return -EINVAL;
     }
     buf = malloc(buflen);
     if (!buf) {
-        log_err("no memory");
+        log_warning("no memory");
         return -ENOMEM;
     }
     memset(buf, 0, buflen);
@@ -210,7 +209,7 @@ int klnk_io_sync_by_addr(vres_t *resource, char *in, size_t inlen, char *out, si
         memcpy(req->buf, in, inlen);
     desc = klnk_connect(addr, KLNK_PORT);
     if (desc < 0) {
-        log_err("failed to connect");
+        log_warning("failed to connect");
         ret = -EFAULT;
     } else {
         ret = klnk_send(desc, buf, buflen);

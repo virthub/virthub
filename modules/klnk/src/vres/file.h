@@ -19,7 +19,7 @@
 
 #define FILE_STAT_INIT 1
 #define FILE_PATH_MAX  64
-#define FILE_BUF_SIZE  (1 << 16)
+#define FILE_BUF_SIZE  (1 << 20)
 
 #define FILE_SEPARATOR '/'
 #define FILE_ROOT_PATH "/"

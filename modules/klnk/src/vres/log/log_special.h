@@ -1,5 +1,5 @@
-#ifndef _LOG_SYNC_H
-#define _LOG_SYNC_H
+#ifndef _LOG_SPECIAL_H
+#define _LOG_SPECIAL_H
 
 #include "log.h"
 

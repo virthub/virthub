@@ -3,7 +3,7 @@
 
 #include "resource.h"
 #include "trace.h"
-#include "sync.h"
+#include "special.h"
 
 #ifdef SHOW_MEMBER
 #define LOG_MEMBER_ADD

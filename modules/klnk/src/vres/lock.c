@@ -49,7 +49,7 @@ static inline void vres_lock_get_desc(vres_t *resource, vres_lock_desc_t *desc)
     desc->entry[1] = resource->cls;
     if (vres_get_op(resource) == VRES_OP_SHMFAULT) {
         desc->entry[2] = resource->owner;
-        desc->entry[3] = vres_get_off(resource);
+        desc->entry[3] = vres_get_pgno(resource);
     } else {
         desc->entry[2] = 0;
         desc->entry[3] = 0;
@@ -104,7 +104,7 @@ static inline vres_lock_t *vres_lock_get(vres_t *resource, vres_lock_list_t *lis
     if (!lock) {
         lock = vres_lock_alloc(&desc);
         if (!lock) {
-            log_resource_err(resource, "no memory");
+            log_resource_warning(resource, "no memory");
             goto out;
         }
         lock->count = 1;
@@ -136,7 +136,7 @@ static inline vres_lock_t *vres_lock_get_lock(vres_t *resource)
     if (!lock) {
         lock = vres_lock_alloc(&desc);
         if (!lock) {
-            log_resource_err(resource, "no memory");
+            log_resource_warning(resource, "no memory");
             goto out;
         }
         vres_lock_insert(grp, lock);
@@ -168,13 +168,13 @@ vres_lock_t *vres_lock_top(vres_t *resource)
     pthread_t tid = pthread_self();
 
     if (!(lock_stat & VRES_STAT_INIT)) {
-        log_err("invalid state");
+        log_warning("invalid state");
         return NULL;
     }
     log_lock_top(resource);
     list = malloc(sizeof(vres_lock_list_t));
     if (!list) {
-        log_resource_err(resource, "no memory");
+        log_resource_warning(resource, "no memory");
         return NULL;
     }
     list->tid = tid;
@@ -214,7 +214,7 @@ int vres_lock_buttom(vres_lock_t *lock)
     pthread_t tid = pthread_self();
 
     if (!(lock_stat & VRES_STAT_INIT)) {
-        log_err("invalid state");
+        log_warning("invalid state");
         return -EINVAL;
     }
     pthread_mutex_lock(&lock->mutex);
@@ -239,12 +239,12 @@ int vres_lock(vres_t *resource)
     vres_lock_t *lock;
 
     if (!(lock_stat & VRES_STAT_INIT)) {
-        log_err("invalid state");
+        log_warning("invalid state");
         return -EINVAL;
     }
     lock = vres_lock_get_lock(resource);
     if (!lock) {
-        log_resource_err(resource, "no entry");
+        log_resource_warning(resource, "no entry");
         return -ENOENT;
     }
     log_lock(resource);
@@ -261,13 +261,13 @@ int vres_lock_timeout(vres_t *resource, vres_time_t timeout)
     vres_lock_t *lock;
 
     if (!(lock_stat & VRES_STAT_INIT)) {
-        log_err("invalid state");
+        log_warning("invalid state");
         return -EINVAL;
     }
     log_lock_timeout(resource);
     lock = vres_lock_get_lock(resource);
     if (!lock) {
-        log_resource_err(resource, "no entry");
+        log_resource_warning(resource, "no entry");
         return -ENOENT;
     }
     if (lock->count > 1) {
@@ -291,7 +291,7 @@ void vres_unlock(vres_t *resource, vres_lock_t *lock)
     vres_lock_group_t *grp;
 
     if (!(lock_stat & VRES_STAT_INIT)) {
-        log_err("invalid state");
+        log_warning("invalid state");
         return;
     }
     if (lock)
@@ -307,7 +307,7 @@ void vres_unlock(vres_t *resource, vres_lock_t *lock)
             vres_lock_get_desc(resource, &desc);
         lock = vres_lock_lookup(grp, &desc);
         if (!lock) {
-            log_resource_err(resource, "no lock");
+            log_resource_warning(resource, "no lock");
             goto out;
         }
     }
@@ -329,9 +329,9 @@ void vres_unlock(vres_t *resource, vres_lock_t *lock)
                 list_del(&list->list);
                 free(list);
                 if (release && !list_empty(&lock->list))
-                    log_resource_err(resource, "failed to release");
+                    log_resource_warning(resource, "failed to release");
             } else
-                log_resource_err(resource, "invalid lock");
+                log_resource_warning(resource, "invalid lock");
         }
     }
     pthread_mutex_unlock(&lock->mutex);

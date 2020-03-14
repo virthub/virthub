@@ -38,7 +38,7 @@ int vres_do_check_resource(vres_t *resource)
 
     vres_get_path(resource, path);
     if (!vres_file_is_dir(path)) {
-        log_resource_err(resource, "no owner");
+        log_resource_warning(resource, "no owner");
         return -ENOOWNER;
     }
     return 0;
@@ -69,8 +69,10 @@ int vres_check_resource(vres_t *resource)
     return vres_smgr_check_resource(&res);
 #elif MANAGER_TYPE == DYNAMIC_MANAGER
     return vres_dmgr_check_resource(&res);
-#else
+#elif MANAGER_TYPE == AREA_MANAGER && defined(ENABLE_DYNAMIC_OWNER)
     return vres_do_check_resource(&res);
+#else
+    return vres_check_initial_owner(&res);
 #endif
 }
 
@@ -101,7 +103,7 @@ int vres_save_peer(vres_id_t id, vres_desc_t *peer)
     vres_t res;
 
     if (!peer || (peer->id <= 0)) {
-        log_err("invalid peer");
+        log_warning("invalid peer");
         return -EINVAL;
     }
     res.key = id;
@@ -122,7 +124,7 @@ int vres_get_peer(vres_id_t id, vres_desc_t *peer)
     if (!ret)
         log_resource_get_peer(&res, "id=%d (peer_id=%d), addr=%s", id, peer->id, addr2str(peer->address));
     else
-        log_err("failed to find peer, id=%d", id);
+        log_warning("failed to find peer, id=%d", id);
     return ret;
 }
 
@@ -138,13 +140,13 @@ int vres_lookup(vres_t *resource, vres_desc_t *desc)
             if (!ret)
                 log_resource_lookup(resource, "save result, addr=%s", addr2str(desc->address));
             else
-                log_resource_err(resource, "failed to save, ret=%s", log_get_err(ret));
+                log_resource_warning(resource, "failed to save, ret=%s", log_get_err(ret));
         } else
-            log_resource_err(resource, "failed to find, ret=%s", log_get_err(ret));
+            log_resource_warning(resource, "failed to find, ret=%s", log_get_err(ret));
     } else if (!ret)
         log_resource_lookup(resource, "addr=%s", addr2str(desc->address));
     else if (ret)
-        log_resource_err(resource, "failed to read, ret=%s", log_get_err(ret));
+        log_resource_warning(resource, "failed to read, ret=%s", log_get_err(ret));
     return ret;
 }
 
@@ -188,7 +190,7 @@ int vres_flush(vres_t *resource)
     vres_get_key_path(resource, path);
     ret = vres_metadata_remove(path);
     if (ret) {
-        log_resource_err(resource, "failed to remove");
+        log_resource_warning(resource, "failed to remove");
         return ret;
     }
     return 0;
@@ -239,7 +241,7 @@ int vres_destroy(vres_t *resource)
     if (own || pub) {
         ret = vres_member_delete(resource);
         if (ret) {
-            log_resource_err(resource, "failed to delete this member");
+            log_resource_warning(resource, "failed to delete this member");
             return ret;
         }
         if (own) {
@@ -276,7 +278,7 @@ int vres_get_events(vres_t *resource, vres_index_t **events)
         buf = malloc(size);
         if (buf) {
             if (vres_file_read(buf, 1, size, filp) != size) {
-                log_resource_err(resource, "failed to read");
+                log_resource_warning(resource, "failed to read");
                 free(buf);
                 ret = -EIO;
             } else {
@@ -284,10 +286,63 @@ int vres_get_events(vres_t *resource, vres_index_t **events)
                 ret = size / sizeof(vres_index_t);
             }
         } else {
-            log_resource_err(resource, "no memory");
+            log_resource_warning(resource, "no memory");
             ret = -ENOMEM;
         }
     }
     vres_file_close(filp);
     return ret;
+}
+
+
+int vres_get_initial_owner(vres_t *resource)
+{
+    return (vres_get_pgno(resource) % vres_nr_managers) + 1;
+}
+
+
+int vres_create_initial_owner(vres_t *resource)
+{
+    vres_file_t *filp;
+    struct shmid_ds shmid_ds;
+    char path[VRES_PATH_MAX];
+
+    memset(&shmid_ds, 0, sizeof(struct shmid_ds));
+    vres_get_state_path(resource, path);
+    filp = vres_file_open(path, "w");
+    if (!filp) {
+        log_resource_warning(resource, "failed to create");
+        return -ENOENT;
+    }
+    if (vres_file_write((char *)&shmid_ds, sizeof(struct shmid_ds), 1, filp) != 1) {
+        vres_file_close(filp);
+        return -EIO;
+    }
+    vres_file_close(filp);
+    return 0;
+}
+
+
+int vres_check_initial_owner(vres_t *resource)
+{
+    char path[VRES_PATH_MAX] = {0};
+
+    vres_get_path(resource, path);
+    if (!vres_file_is_dir(path)) {
+        if (VRES_CLS_SHM == resource->cls) {
+            vres_mkdir(resource);
+#ifdef ENABLE_PRIORITY
+            vres_prio_create(resource, true);
+#endif
+            vres_create_initial_owner(resource);
+        } else
+            return -ENOOWNER;
+    }
+    return 0;
+}
+
+
+bool vres_is_initial_owner(vres_t *resource)
+{
+    return resource->owner == vres_get_initial_owner(resource);
 }

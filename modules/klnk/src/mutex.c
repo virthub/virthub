@@ -49,7 +49,7 @@ static inline void klnk_mutex_get_desc(vres_t *resource, klnk_mutex_desc_t *desc
     desc->entry[1] = resource->cls;
     desc->entry[2] = resource->owner;
     if (VRES_CLS_SHM == resource->cls)
-        desc->entry[3] = vres_get_off(resource);
+        desc->entry[3] = vres_get_pgno(resource);
     else
         desc->entry[3] = 0;
 }
@@ -124,7 +124,7 @@ int klnk_mutex_lock(vres_t *resource)
     klnk_mutex_t *mutex;
 
     if (!mutex_stat) {
-        log_err("invalid state");
+        log_warning("invalid state");
         return -EINVAL;
     }
     mutex = klnk_mutex_get(resource);
@@ -145,7 +145,7 @@ void klnk_mutex_unlock(vres_t *resource)
     klnk_mutex_group_t *grp;
 
     if (!mutex_stat) {
-        log_err("invalid state");
+        log_warning("invalid state");
         return;
     }
     klnk_mutex_get_desc(resource, &desc);

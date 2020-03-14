@@ -7,7 +7,7 @@
 #include <stdbool.h>
 #include "net.h"
 
-#define KLNK_IO_MAX         8192
+#define KLNK_IO_MAX         (1 << 20)
 #define KLNK_RETRY_MAX      10
 #define KLNK_RETRY_INTERVAL 5000000 // usec
 
