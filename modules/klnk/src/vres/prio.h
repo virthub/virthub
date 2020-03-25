@@ -25,14 +25,14 @@
 #endif
 
 #ifdef SHOW_PRIO
+#define LOG_PRIO_LOCK
 #define LOG_PRIO_CHECK
 #define LOG_PRIO_SELECT
-
-#ifdef SHOW_MORE
-#define LOG_PRIO_LOCK
-#define LOG_PRIO_CREATE
 #define LOG_PRIO_SET_BUSY
 #define LOG_PRIO_SET_IDLE
+
+#ifdef SHOW_MORE
+#define LOG_PRIO_CREATE
 #define LOG_PRIO_SYNC_TIME
 #endif
 #endif

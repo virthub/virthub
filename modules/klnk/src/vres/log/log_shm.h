@@ -6,54 +6,60 @@
 #define LOG_SHM_NR_BITS  32
 #define LOG_SHM_NR_BYTES 16
 
-static inline int _convert2flags(bool ready, bool active, bool wait, bool update, bool cmpl, bool save, bool cand, bool own)
+static inline unsigned long _convert2flags(bool ready, bool active, bool update, bool cmpl, bool cand, bool wait)
 {
-    int flags = 0;
+    unsigned long flags = 0;
 
+    if (cand)
+        flags |= 0x00001000;
+    if (wait)
+        flags |= 0x00002000;
     if (ready)
         flags |= 0x00010000;
     if (active)
         flags |= 0x00020000;
-    if (wait)
-        flags |= 0x00040000;
     if (update)
         flags |= 0x00080000;
     if (cmpl)
         flags |= 0x00100000;
-    if (save)
-        flags |= 0x00200000;
-    if (cand)
-        flags |= 0x00400000;
-    if (own)
-        flags |= 0x00800000;
 
     return flags;
 }
 
-#define _page_flags(resource, page) (page->flags[vres_page_get_off(resource)] | _convert2flags(page->ready, page->active, page->wait, page->update, page->cmpl, page->save, page->cand, page->own))
+#define _page_flags(resource, page, chunk) (page->flags[vres_get_page_off(resource)] | _convert2flags(page->ready, chunk->active, page->update, page->cmpl, chunk->cand, chunk->wait))
 
-#define log_shm_page(resource, page, str) \
-        log_str(str, ", page={pgno:%ld, hid:%d, cnt:%d, clk:%lld, ver:%lld, hld:%d, own:%d, flg:%s}", \
-        vres_get_pgno(resource), page->hid, page->count, page->clk, page->version, page->nr_holders, page->owner, log_get_flags(_page_flags(resource, page))) \
+#ifdef ENABLE_PREEMPT_COUNT
+#define log_shm_page(resource, page, str) do { \
+    vres_chunk_t *chunk = vres_page_get_chunk(resource, page); \
+    log_str(str, ", page={pgno:%ld, chunk:%ld, hid:%d, cnt:%d, clk:%lld, ver:%lld, peers:%d, page_owner:%d, chunk_owner:%d, preempt_count=%d), flg:%s}", vres_get_pgno(resource), vres_get_chunk(resource), chunk->hid, page->count, chunk->clk, chunk->version, chunk->nr_holders, page->owner, chunk->owner, page->preempt_count, log_get_flags(_page_flags(resource, page, chunk))); \
+} while (0)
+#else
+#define log_shm_page(resource, page, str) do { \
+    vres_chunk_t *chunk = vres_page_get_chunk(resource, page); \
+    log_str(str, ", page={pgno:%ld, chunk:%ld, hid:%d, cnt:%d, clk:%lld, ver:%lld, peers:%d, page_owner:%d, chunk_owner:%d, flg:%s}", vres_get_pgno(resource), vres_get_chunk(resource), chunk->hid, page->count, chunk->clk, chunk->version, chunk->nr_holders, page->owner, chunk->owner, log_get_flags(_page_flags(resource, page, chunk))); \
+} while (0)
+#endif
 
-#define log_shm_peers(peers, str) do { \
+
+#define log_shm_peers(peer_list, total, str) do { \
     int i; \
-    if (!peers || !peers->total) \
+    if (!peer_list || !total) \
         break; \
     log_str(str, ", peers=["); \
-    for (i = 0; i < peers->total - 1; i++) \
-        log_str(str, "%d, ", peers->list[i]); \
-    log_str(str, "%d]", peers->list[i]); \
+    for (i = 0; i < total - 1; i++) \
+        log_str(str, "%d, ", peer_list[i]); \
+    log_str(str, "%d]", peer_list[i]); \
 } while (0)
 
-#define log_shm_holders(page, str) do { \
+#define log_shm_holders(resource, page, str) do { \
     int i; \
-    if (!page->nr_holders) \
+    vres_chunk_t *chunk = vres_page_get_chunk(resource, page); \
+    if (!chunk->nr_holders) \
         break; \
     log_str(str, ", holders=["); \
-    for (i = 0; i < page->nr_holders - 1; i++) \
-        log_str(str, "%d, ", page->holders[i]); \
-    log_str(str, "%d]", page->holders[i]); \
+    for (i = 0; i < chunk->nr_holders - 1; i++) \
+        log_str(str, "%d, ", chunk->holders[i]); \
+    log_str(str, "%d]", chunk->holders[i]); \
 } while (0)
 
 #define log_shm_req(req, str) do { \
@@ -67,7 +73,7 @@ static inline int _convert2flags(bool ready, bool active, bool wait, bool update
     vres_t *resource = &(req)->resource; \
     vres_shm_req_t *shm_req = (vres_shm_req_t *)(req->buf); \
     log_resource_str(resource, tmp); \
-    log_shm_holders(page, tmp); \
+    log_shm_holders(resource, page, tmp); \
     log_shm_page(resource, page, tmp); \
     log_shm_req(shm_req, tmp); \
     log_ln("%s", tmp); \
@@ -82,7 +88,7 @@ static inline int _convert2flags(bool ready, bool active, bool wait, bool update
     vres_t *resource = &(req)->resource; \
     vres_shm_req_t *shm_req = (vres_shm_req_t *)(req->buf); \
     log_resource_str(resource, tmp); \
-    log_shm_holders(page, tmp); \
+    log_shm_holders(resource, page, tmp); \
     log_shm_page(resource, page, tmp); \
     log_shm_req(shm_req, tmp); \
     log_ln("%s", tmp); \
@@ -132,7 +138,7 @@ static inline int _convert2flags(bool ready, bool active, bool wait, bool update
     vres_t *resource = &(req)->resource; \
     vres_shm_req_t *shm_req = (vres_shm_req_t *)(req->buf); \
     log_resource_str(resource, tmp); \
-    log_shm_holders(page, tmp); \
+    log_shm_holders(resource, page, tmp); \
     log_shm_page(resource, page, tmp); \
     log_shm_req(shm_req, tmp); \
     log_ln("%s", tmp); \
@@ -141,10 +147,10 @@ static inline int _convert2flags(bool ready, bool active, bool wait, bool update
 #define log_shm_notify_owner(...) do {} while (0)
 #endif
 
-#ifdef LOG_SHM_REPLY
-#define log_shm_reply log_resource_ln
+#ifdef LOG_SHM_FAST_REPLY
+#define log_shm_fast_reply log_resource_ln
 #else
-#define log_shm_reply(...) do {} while (0)
+#define log_shm_fast_reply(...) do {} while (0)
 #endif
 
 #ifdef LOG_SHM_NOTIFY_HOLDER
@@ -181,7 +187,7 @@ static inline int _convert2flags(bool ready, bool active, bool wait, bool update
     vres_t *resource = &(req)->resource; \
     vres_shm_req_t *shm_req = (vres_shm_req_t *)(req->buf); \
     log_resource_str(resource, tmp); \
-    log_shm_holders(page, tmp); \
+    log_shm_holders(resource, page, tmp); \
     log_shm_req(shm_req, tmp); \
     log_ln("%s", tmp); \
 } while (0)
@@ -215,12 +221,15 @@ static inline int _convert2flags(bool ready, bool active, bool wait, bool update
 #ifdef LOG_SHM_GET_ARGS
 #define log_shm_get_arg(resource, arg) do { \
     char tmp[LOG_STR_LEN] = {0}; \
+    vres_peers_t *peers = (arg)->peers; \
+    vres_id_t *peer_list = peers ? peers->list : NULL; \
+    int total = peers ? peers->total : 0; \
     vres_page_t *page; \
     if ((arg)->in == (arg)->buf) \
         break; \
     page = vres_file_get_desc((vres_file_entry_t *)(arg)->entry, vres_page_t); \
     log_resource_str(resource, tmp); \
-    log_shm_peers((arg)->peers, tmp); \
+    log_shm_peers(peer_list, total, tmp); \
     log_shm_page(resource, page, tmp); \
     log_shm_req((vres_shm_req_t *)(arg)->in, tmp); \
     log_ln("%s", tmp); \
@@ -269,9 +278,11 @@ static inline int _convert2flags(bool ready, bool active, bool wait, bool update
 #ifdef LOG_SHM_EXPIRED_REQ
 #define log_shm_expired_req(page, req) do { \
     char tmp[LOG_STR_LEN] = {0}; \
+    vres_t *resource = &(req)->resource; \
+    vres_chunk_t *chunk = vres_page_get_chunk(resource, page); \
     vres_shm_req_t *shm_req = (vres_shm_req_t *)(req)->buf; \
-    log_resource_str(&(req)->resource, tmp); \
-    log_str(tmp, "find an expired request, page={clk:%lld, ver:%lld}", (page)->clk, (page)->version); \
+    log_resource_str(resource, tmp); \
+    log_str(tmp, ", find an expired request, page={pgno:%ld, clk:%lld, ver:%lld}", vres_get_pgno(resource), chunk->clk, chunk->version); \
     log_shm_req(shm_req, tmp); \
     log_ln("%s", tmp); \
 } while (0)
@@ -333,21 +344,24 @@ static inline int _convert2flags(bool ready, bool active, bool wait, bool update
 #endif
 
 #ifdef LOG_SHM_REQUEST_HOLDERS
-#define log_shm_request_holders log_resource_ln
+#define log_shm_request_holders(resource, page) do { \
+    char tmp[LOG_STR_LEN] = {0}; \
+    log_resource_str(resource, tmp); \
+    log_shm_holders(resource, page, tmp); \
+    log_shm_page(resource, page, tmp); \
+    log_ln("%s", tmp); \
+} while (0)
 #else
 #define log_shm_request_holders(...) do {} while (0)
 #endif
 
 #ifdef LOG_SHM_CHECK_SPEC_REPLY
-#define log_check_spec_reply(resource, hid, peers, cnt) do { \
+#define log_check_spec_reply(resource, hid, peer_list, total) do { \
     if (hid) { \
-        int i; \
         char tmp[LOG_STR_LEN] = {0}; \
         log_resource_str(resource, tmp); \
-        log_str(tmp, ", hid=%d, peers=[", hid); \
-        for (i = 0; i < cnt - 1; i++) \
-            log_str(tmp, "%d, ", peers[i]); \
-        log_str(tmp, "%d]", peers[i]); \
+        log_str(tmp, ", hid=%d", hid); \
+        log_shm_peers(peer_list, total, tmp); \
         log_ln("%s", tmp); \
     } \
 } while (0)
@@ -422,7 +436,7 @@ static inline int _convert2flags(bool ready, bool active, bool wait, bool update
 #define log_shm_page_diff(diff) do { \
     int i, j; \
     char tmp[LOG_STR_LEN] = {0}; \
-    log_str(tmp, "page diff: (%s)\n", __func__); \
+    log_str(tmp, "page_diff: (%s)\n", __func__); \
     for (i = 0; i < VRES_PAGE_NR_VERSIONS; i++) { \
         for (j = 0; j < VRES_LINE_MAX; j++) \
             log_str(tmp, "%d", diff[i][j]); \
@@ -432,6 +446,12 @@ static inline int _convert2flags(bool ready, bool active, bool wait, bool update
 } while (0)
 #else
 #define log_shm_page_diff(...) do {} while (0)
+#endif
+
+#ifdef LOG_SHM_GET_PEERS
+#define log_shm_get_peers log_resource_info
+#else
+#define log_shm_get_peers(...) do {} while (0)
 #endif
 
 #endif

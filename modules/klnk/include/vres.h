@@ -18,8 +18,9 @@
 #define AREA_MANAGER     0
 #define STATIC_MANAGER   1
 #define DYNAMIC_MANAGER  2
-  
-#define PAGE_SIZE        4096
+
+#define PAGE_SHIFT       12
+#define PAGE_SIZE        (1 << PAGE_SHIFT)
 #define BITS_PER_BYTE    8
 #define NODE_NAME_SIZE   9
 #define LEN_LISTEN_QUEUE 16
@@ -34,8 +35,18 @@
 #define VRES_POS_VAL2    3
 #define VRES_POS_INDEX   3
 
-#define VRES_PAGE_SHIFT  4 // merge a set of continuous pages (the number of pages is 1 << VRES_PAGE_SHIFT) into one logical page
+#define VRES_PAGE_SHIFT  3
+#define VERS_PAGE_MAX    (1 << VRES_PAGE_SHIFT) // merge a set of continuous pages into one logical page
 #define VRES_PAGE_SIZE   (PAGE_SIZE << VRES_PAGE_SHIFT)
+#ifdef ENABLE_PARTIAL_PROTECTION
+#define VRES_CHUNK_SHIFT 2
+#else
+#define VRES_CHUNK_SHIFT VRES_PAGE_SHIFT
+#endif
+#define VRES_CHUNK_SIZE  (PAGE_SIZE << VRES_CHUNK_SHIFT)
+#define VRES_CHUNK_MAX   (1 << (VRES_PAGE_SHIFT - VRES_CHUNK_SHIFT))
+#define VRES_CHUNK_PAGES (1 << VRES_CHUNK_SHIFT)
+
 #define VRES_RDONLY      0x0001
 #define VRES_RDWR        0x0002
 #define VRES_CREAT       0x0004
@@ -46,6 +57,7 @@
 #define VRES_REDO        0x0100
 #define VRES_PRIO        0x0200
 #define VRES_PRESENT     0x0400
+#define VRES_DUMP        0x0800
 
 #define VRES_STAT_INIT   1
 #define VRES_TTL_MAX     128
@@ -111,13 +123,13 @@ enum vres_operation {
 typedef key_t vres_key_t;
 typedef int32_t vres_id_t;
 typedef int32_t vres_val_t;
-typedef int32_t vres_index_t;
-typedef int32_t vres_entry_t;
-typedef int64_t vres_time_t;
 typedef uint32_t vres_op_t;
+typedef int64_t vres_time_t;
 typedef uint32_t vres_flg_t;
 typedef uint32_t vres_cls_t;
 typedef uint64_t vres_clk_t;
+typedef int32_t vres_index_t;
+typedef int32_t vres_entry_t;
 typedef uint64_t vres_version_t;
 typedef struct in_addr vres_addr_t;
 

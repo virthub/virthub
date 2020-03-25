@@ -111,7 +111,7 @@ void vres_get_member_path(vres_t *resource, char *path)
 void vres_get_holder_path(vres_t *resource, char *path)
 {
     vres_get_record_path(resource, path);
-    vres_path_append_holder(path);
+    vres_path_append_holder(path, vres_get_chunk(resource));
 }
 
 

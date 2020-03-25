@@ -17,17 +17,11 @@ int vres_smgr_get_peers(vres_t *resource, vres_page_t *page, vres_peers_t *peers
 }
 
 
-int vres_smgr_check_resource(vres_t *resource)
-{
-    return vres_check_initial_owner(resource);
-}
-
-
 bool vres_smgr_check_sched(vres_t *resource, vres_page_t *page)
 {
     int flags = vres_get_flags(resource);
 
-    if (vres_pg_own(page) && (vres_pg_write(page, vres_page_get_off(resource)) || (flags & VRES_RDWR)))
+    if (vres_page_chkown(resource, page) && (vres_page_write(resource, page) || (flags & VRES_RDWR)))
         return true;
     else
         return false;

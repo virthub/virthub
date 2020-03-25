@@ -65,11 +65,7 @@ int vres_check_resource(vres_t *resource)
         res.cls = VRES_CLS_TSK;
         res.key = vres_get_id(resource);
     }
-#if MANAGER_TYPE == STATIC_MANAGER
-    return vres_smgr_check_resource(&res);
-#elif MANAGER_TYPE == DYNAMIC_MANAGER
-    return vres_dmgr_check_resource(&res);
-#elif MANAGER_TYPE == AREA_MANAGER && defined(ENABLE_DYNAMIC_OWNER)
+#if MANAGER_TYPE == AREA_MANAGER && defined(ENABLE_DYNAMIC_OWNER)
     return vres_do_check_resource(&res);
 #else
     return vres_check_initial_owner(&res);

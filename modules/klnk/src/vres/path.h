@@ -26,7 +26,6 @@
 #define vres_path_append_temp(path)     strcat(path, VRES_PATH_TEMP)
 #define vres_path_append_event(path)    strcat(path, VRES_PATH_EVENT)
 #define vres_path_append_state(path)    strcat(path, VRES_PATH_STATE)
-#define vres_path_append_holder(path)   strcat(path, VRES_PATH_HOLDER)
 #define vres_path_append_member(path)   strcat(path, VRES_PATH_MEMBER)
 #define vres_path_append_action(path)   strcat(path, VRES_PATH_ACTION)
 #define vres_path_append_update(path)   strcat(path, VRES_PATH_UPDATE)
@@ -37,6 +36,7 @@
 #define vres_path_append_num(path, num) sprintf(path + strlen(path), "%lx", (unsigned long)num)
 #define vres_path_append_idx(path, idx) sprintf(path + strlen(path), "%ld", (unsigned long)idx)
 #define vres_path_append_que(path, que) sprintf(path + strlen(path), "%lx_", (unsigned long)que)
+#define vres_path_append_holder(path, chunk) sprintf(path + strlen(path), "%s_%lx", VRES_PATH_HOLDER, (unsigned long)chunk)
 
 #define vres_path_append_own vres_path_append_num // 1st level
 #define vres_path_append_cls vres_path_append_num // 2nd level
