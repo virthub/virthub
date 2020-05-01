@@ -18,13 +18,11 @@
 #include "line.h"
 #include "tsk.h"
 
-// #define VRES_SHM_EXTEND_HOLD_TIME
-
 #define VRES_SHM_PEER_MAX     8
 #define VRES_SHM_NR_PEERS     (VRES_SHM_PEER_MAX > (VRES_PAGE_NR_HOLDERS - 1) ? (VRES_PAGE_NR_HOLDERS - 1) : VRES_SHM_PEER_MAX)
 #define VRES_SHM_NR_AREAS     4
 #define VRES_SHM_NR_VISITS    2
-#define VRES_SHM_HOLD_INTV    5000 // usec
+#define VRES_SHM_DELTA_TIME   5000 // usec (if VRES_SHM_DELTA_TIME is set, it can ensure that the required page is held for at least VRES_SHM_DELTA_TIME time)
 #define VRES_SHM_PREEMPT_INTV VRES_PRIO_PERIOD
 
 #define VRES_SHMMAX           0x2000000                                         /* max shared seg size (bytes) */

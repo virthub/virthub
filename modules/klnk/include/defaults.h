@@ -10,21 +10,22 @@
 #include <sched.h>
 #endif
 
+// #define ENABLE_SPEC          // speculative mode
 #define ENABLE_PRIORITY
+#define ENABLE_PAGE_CHECK
 #define ENABLE_PAGE_PREEMPT
-// #define ENABLE_PREEMPT_COUNT
-// #define ENABLE_TIMED_PREEMPT
-// #define ENABLE_CHUNK_PREEMPT
-// #define ENABLE_WRITE_PREEMPT
+#define ENABLE_TIMED_PREEMPT
 #define ENABLE_DYNAMIC_OWNER
 #define ENABLE_PARTIAL_PROTECTION
-#define ENABLE_SPEC          // speculative mode
-// #define ENABLE_PAGE_CHECK    // this setting must be enabled if a stronger consistency is required
+
 // #define ENABLE_TTL
 // #define ENABLE_PGSAVE
 // #define ENABLE_TSKPUT
 // #define ENABLE_BARRIER
 // #define ENABLE_TIME_SYNC
+// #define ENABLE_CHUNK_PREEMPT
+// #define ENABLE_WRITE_PREEMPT
+// #define ENABLE_PREEMPT_COUNT
 
 //----------------------------------------------------------//
 // logging

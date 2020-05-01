@@ -149,33 +149,33 @@ static inline bool vres_pg_cmpl(vres_page_t *page)
     return page->cmpl;
 }
 
-static inline void vres_pg_clrread(vres_page_t *page, int off)
+static inline void vres_pg_clrread(vres_page_t *page, unsigned long off)
 {
     assert(off >= 0 && off < VERS_PAGE_MAX);
     page->flags[off] &= ~VRES_RDWR;
     page->flags[off] &= ~VRES_RDONLY;
 }
 
-static inline void vres_pg_clrwrite(vres_page_t *page, int off)
+static inline void vres_pg_clrwrite(vres_page_t *page, unsigned long off)
 {
     assert(off >= 0 && off < VERS_PAGE_MAX);
     page->flags[off] &= ~VRES_RDWR;
     page->flags[off] |= VRES_RDONLY;
 }
 
-static inline void vres_pg_clrpresent(vres_page_t *page, int off)
+static inline void vres_pg_clrpresent(vres_page_t *page, unsigned long off)
 {
     assert(off >= 0 && off < VERS_PAGE_MAX);
     page->flags[off] &= ~VRES_PRESENT;
 }
 
-static inline bool vres_pg_write(vres_page_t *page, int off)
+static inline bool vres_pg_write(vres_page_t *page, unsigned long off)
 {
     assert(off >= 0 && off < VERS_PAGE_MAX);
     return (page->flags[off] & VRES_RDWR) != 0;
 }
 
-static inline bool vres_pg_present(vres_page_t *page, int off)
+static inline bool vres_pg_present(vres_page_t *page, unsigned long off)
 {
     assert(off >= 0 && off < VERS_PAGE_MAX);
     return (page->flags[off] & VRES_PRESENT) != 0;
@@ -215,7 +215,7 @@ bool vres_page_chkown(vres_t *resource, vres_page_t *page);
 void *vres_page_get(vres_t *resource, vres_page_t **page, int flags);
 vres_chunk_t *vres_page_get_chunk(vres_t *resource, vres_page_t *page);
 void vres_page_clear_holder_list(vres_t *resource, vres_chunk_t *chunk);
-int vres_page_check(vres_t *resource, vres_page_t *page, int retry, int flags);
+int vres_page_check(vres_t *resource, unsigned long off, int retry, int flags);
 int vres_page_get_diff(vres_chunk_t *chunk, vres_version_t version, bool *diff);
 bool vres_page_search_holder_list(vres_t *resource, vres_chunk_t *chunk, vres_id_t id);
 int vres_page_update(vres_t *resource, vres_page_t *page, unsigned long off, char *buf);

@@ -1332,8 +1332,8 @@ int vres_shm_deliver(vres_page_t *page, vres_req_t *req)
         return ret;
     }
 #endif
-#ifdef VRES_SHM_EXTEND_HOLD_TIME
-    vres_sleep(VRES_SHM_HOLD_INTV); // time reserved for accessing a page
+#ifdef VRES_SHM_DELTA_TIME
+    vres_sleep(VRES_SHM_DELTA_TIME); // time reserved for accessing a page
 #endif
     log_shm_deliver(page, req);
     return 0;

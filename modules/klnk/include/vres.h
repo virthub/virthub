@@ -35,11 +35,11 @@
 #define VRES_POS_VAL2    3
 #define VRES_POS_INDEX   3
 
-#define VRES_PAGE_SHIFT  3
+#define VRES_PAGE_SHIFT  5
 #define VERS_PAGE_MAX    (1 << VRES_PAGE_SHIFT) // merge a set of continuous pages into one logical page
 #define VRES_PAGE_SIZE   (PAGE_SIZE << VRES_PAGE_SHIFT)
 #ifdef ENABLE_PARTIAL_PROTECTION
-#define VRES_CHUNK_SHIFT 2
+#define VRES_CHUNK_SHIFT 4
 #else
 #define VRES_CHUNK_SHIFT VRES_PAGE_SHIFT
 #endif

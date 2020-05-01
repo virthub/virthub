@@ -594,6 +594,13 @@ static int vres_page_wrprotect(vres_t *resource, vres_page_t *page, int pid)
         char *p = buf;
 
         if (vres_pg_present(page, pos) && vres_pg_write(page, pos)) {
+#ifdef ENABLE_PAGE_CHECK
+            ret = vres_page_check(resource, off, VRES_PAGE_CHECK_MAX, VRES_RDONLY);
+            if (ret) {
+                log_resource_err(resource, "failed to check page");
+                goto out;
+            }
+#endif
             if (sys_shm_wrprotect(resource->key, pid, off, buf)) {
                 if (ENOENT != errno) {
                     ret = -errno;
@@ -638,6 +645,13 @@ static int vres_page_rdprotect(vres_t *resource, vres_page_t *page, int pid)
         char *p = buf;
 
         if (vres_pg_present(page, pos)) {
+#ifdef ENABLE_PAGE_CHECK
+            ret = vres_page_check(resource, off, VRES_PAGE_CHECK_MAX, VRES_RDONLY);
+            if (ret) {
+                log_resource_err(resource, "failed to check page");
+                goto out;
+            }
+#endif
             if (sys_shm_rdprotect(key, pid, off, buf)) {
                 if (ENOENT != errno) {
                     log_resource_warning(resource, "failed to protect (%d)", errno);
@@ -678,15 +692,6 @@ int vres_page_protect(vres_t *resource, vres_page_t *page)
         log_resource_warning(resource, "failed to get pid (ret=%s)", log_get_err(ret));
         return -EINVAL;
     }
-#ifdef ENABLE_PAGE_CHECK
-    if (vres_pg_present(resource, page)) {
-        ret = vres_page_check(resource, page, VRES_PAGE_CHECK_MAX, VRES_RDONLY);
-        if (ret) {
-            log_resource_err(resource, "failed to check page");
-            return ret;
-        }
-    }
-#endif
     if (flags & VRES_RDONLY)
         return vres_page_wrprotect(resource, page, desc.id);
     else if (flags & VRES_RDWR)
@@ -696,14 +701,13 @@ int vres_page_protect(vres_t *resource, vres_page_t *page)
 }
 
 
-int vres_page_check(vres_t *resource, vres_page_t *page, int retry, int flags)
+int vres_page_check(vres_t *resource, unsigned long off, int retry, int flags)
 {
     int ret;
     bool present;
     int cnt = retry;
     vres_desc_t desc;
     vres_key_t key = resource->key;
-    unsigned long off = vres_get_off(resource);
 
     ret = vres_get_peer(resource->owner, &desc);
     if (ret) {

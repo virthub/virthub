@@ -14,19 +14,19 @@
 #define S_IWUGO   (S_IWUSR|S_IWGRP|S_IWOTH)
 #define S_IXUGO   (S_IXUSR|S_IXGRP|S_IXOTH)
 
-static inline int sys_shm_rdprotect(key_t key, pid_t gpid, unsigned long addr, char *buf)
+static inline int sys_shm_rdprotect(key_t key, pid_t gpid, unsigned long pgoff, char *buf)
 {
-    return syscall(__NR_shm_rdprotect, key, gpid, addr, buf);
+    return syscall(__NR_shm_rdprotect, key, gpid, pgoff, buf);
 }
 
-static inline int sys_shm_wrprotect(key_t key, pid_t gpid, unsigned long addr, char *buf)
+static inline int sys_shm_wrprotect(key_t key, pid_t gpid, unsigned long pgoff, char *buf)
 {
-    return syscall(__NR_shm_wrprotect, key, gpid, addr, buf);
+    return syscall(__NR_shm_wrprotect, key, gpid, pgoff, buf);
 }
 
-static inline int sys_shm_present(key_t key, pid_t gpid, unsigned long addr, int flags)
+static inline int sys_shm_present(key_t key, pid_t gpid, unsigned long pgoff, int flags)
 {
-    return syscall(__NR_shm_present, key, gpid, addr, flags);
+    return syscall(__NR_shm_present, key, gpid, pgoff, flags);
 }
 
 #endif

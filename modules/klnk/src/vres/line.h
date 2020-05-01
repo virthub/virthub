@@ -5,7 +5,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-#define VRES_LINE_SHIFT      (VRES_CHUNK_SHIFT + 6)
+#define VRES_LINE_SHIFT      (VRES_CHUNK_SHIFT)    // VRES_CHUNK_SHIFT + 6 by default (i.e. the size of each line is 64B)
 #define VRES_LINE_SIZE       (VRES_CHUNK_SIZE >> VRES_LINE_SHIFT) 
 #define VRES_LINE_MAX        (1 << VRES_LINE_SHIFT) // the number of lines in a chunk
 #define VRES_LINE_SAMPLE_MAX 64
