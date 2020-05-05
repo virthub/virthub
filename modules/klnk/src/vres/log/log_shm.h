@@ -31,12 +31,12 @@ static inline unsigned long _convert2flags(bool ready, bool active, bool update,
 #ifdef ENABLE_PREEMPT_COUNT
 #define log_shm_page(resource, page, str) do { \
     vres_chunk_t *chunk = vres_page_get_chunk(resource, page); \
-    log_str(str, ", page={pgno:%ld, chunk:%ld, hid:%d, cnt:%d, clk:%lld, ver:%lld, peers:%d, page_owner:%d, chunk_owner:%d, preempt_count=%d), flg:%s}", vres_get_pgno(resource), vres_get_chunk(resource), chunk->hid, page->count, chunk->clk, chunk->version, chunk->nr_holders, page->owner, chunk->owner, page->preempt_count, log_get_flags(_page_flags(resource, page, chunk))); \
+    log_str(str, ", page={pgno:%ld, chunk:%ld, hid:%d, cnt:%d, clk:%lld, ver:%lld, peers:%d, owner:%d, preempt_count=%d), flg:%s}", vres_get_pgno(resource), vres_get_chunk(resource), chunk->hid, page->count, chunk->clk, chunk->version, chunk->nr_holders, page->owner, page->preempt_count, log_get_flags(_page_flags(resource, page, chunk))); \
 } while (0)
 #else
 #define log_shm_page(resource, page, str) do { \
     vres_chunk_t *chunk = vres_page_get_chunk(resource, page); \
-    log_str(str, ", page={pgno:%ld, chunk:%ld, hid:%d, cnt:%d, clk:%lld, ver:%lld, peers:%d, page_owner:%d, chunk_owner:%d, flg:%s}", vres_get_pgno(resource), vres_get_chunk(resource), chunk->hid, page->count, chunk->clk, chunk->version, chunk->nr_holders, page->owner, chunk->owner, log_get_flags(_page_flags(resource, page, chunk))); \
+    log_str(str, ", page={pgno:%ld, chunk:%ld, hid:%d, cnt:%d, clk:%lld, ver:%lld, peers:%d, owner:%d, flg:%s}", vres_get_pgno(resource), vres_get_chunk(resource), chunk->hid, page->count, chunk->clk, chunk->version, chunk->nr_holders, page->owner, log_get_flags(_page_flags(resource, page, chunk))); \
 } while (0)
 #endif
 

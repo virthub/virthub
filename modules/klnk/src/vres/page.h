@@ -11,6 +11,8 @@
 #include "file.h"
 #include "util.h"
 
+// #define VRES_PAGE_GRP_LOCK
+
 #define VRES_PAGE_MAX             (1 << VRES_PAGE_SHIFT)
 #define VRES_PAGE_LINES           (1 << (VRES_LINE_SHIFT - VRES_CHUNK_SHIFT))
 #define VRES_PAGE_HODER_MAX       8
@@ -20,9 +22,9 @@
 #define VRES_PAGE_NR_CANDIDATES   16
 #define VRES_PAGE_CHECK_INTV      5000 // usec
 #define VRES_PAGE_DIFF_SIZE       ((VRES_PAGE_NR_VERSIONS * VRES_LINE_MAX + BITS_PER_BYTE - 1) / BITS_PER_BYTE)
-#define VRES_PAGE_LOCK_GROUP_SIZE 256
+#define VRES_PAGE_LOCK_GROUP_SIZE 1024
 #define VRES_PAGE_LOCK_ENTRY_SIZE 2
-#define VRES_PAGE_CHECK_MAX       -1
+#define VRES_PAGE_CHECK_MAX       12   // if VRES_PAGE_CHECK_MAX is set to -1, the times of performing page check are not limited
 
 #ifdef SHOW_PAGE
 #define LOG_PAGE_LOCK
@@ -64,7 +66,6 @@ typedef struct vres_chunk {
     bool writable;
     int nr_holders;
     vres_clk_t clk;
-    vres_id_t owner;
     int nr_candidates;
     vres_index_t index;
 #ifdef ENABLE_CHUNK_PREEMPT

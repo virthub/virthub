@@ -203,15 +203,19 @@ static inline void vres_page_lock_insert(vres_page_lock_group_t *group, vres_pag
 }
 
 
-static inline vres_page_lock_t *vres_page_lock_get(vres_t *resource)
+static inline vres_page_lock_t *vres_page_lock_get(vres_t *resource, bool *first)
 {
     vres_page_lock_desc_t desc;
     vres_page_lock_group_t *grp;
     vres_page_lock_t *lock = NULL;
-
+#ifndef VRES_PAGE_GRP_LOCK
+    assert(first);
+    *first = false;
+#endif
     vres_page_lock_get_desc(resource, &desc);
     grp = &vres_page_lock_group[vres_page_lock_hash(&desc)];
     pthread_mutex_lock(&grp->mutex);
+#ifndef VRES_PAGE_GRP_LOCK
     lock = vres_page_lock_lookup(grp, &desc);
     if (!lock) {
         lock = vres_page_lock_alloc(&desc);
@@ -220,11 +224,16 @@ static inline vres_page_lock_t *vres_page_lock_get(vres_t *resource)
             goto out;
         }
         vres_page_lock_insert(grp, lock);
-    }
-    pthread_mutex_lock(&lock->mutex);
-    lock->count++;
+        lock->count = 1;
+    } else
+        lock->count++;
+    if (lock->count > 1)
+        pthread_mutex_lock(&lock->mutex);
+    else
+        *first = true;
 out:
     pthread_mutex_unlock(&grp->mutex);
+#endif
     return lock;
 }
 
@@ -241,27 +250,33 @@ static void vres_page_lock_free(vres_page_lock_group_t *group, vres_page_lock_t 
 static int vres_page_lock(vres_t *resource)
 {
     int ret = 0;
+    bool first = false;
     vres_page_lock_t *lock;
 
     if (!(vres_page_lock_stat & VRES_STAT_INIT))
         return -EINVAL;
     log_page_lock(resource);
-    lock = vres_page_lock_get(resource);
+    lock = vres_page_lock_get(resource, &first);
+#ifndef VRES_PAGE_GRP_LOCK
     if (!lock) {
         log_resource_warning(resource, "no entry");
         return -ENOENT;
     }
-    if (lock->count > 1)
+    if (!first) {
         pthread_cond_wait(&lock->cond, &lock->mutex);
-    pthread_mutex_unlock(&lock->mutex);
+        pthread_mutex_unlock(&lock->mutex);
+    }
+#endif
     return ret;
 }
 
 
 static void vres_page_unlock(vres_t *resource)
 {
+#ifndef VRES_PAGE_GRP_LOCK
     bool empty = false;
     vres_page_lock_t *lock;
+#endif
     vres_page_lock_desc_t desc;
     vres_page_lock_group_t *grp;
 
@@ -269,24 +284,25 @@ static void vres_page_unlock(vres_t *resource)
         return;
     vres_page_lock_get_desc(resource, &desc);
     grp = &vres_page_lock_group[vres_page_lock_hash(&desc)];
+#ifndef VRES_PAGE_GRP_LOCK
     pthread_mutex_lock(&grp->mutex);
     lock = vres_page_lock_lookup(grp, &desc);
     if (!lock) {
-        log_resource_warning(resource, "cannot find the lock");
+        log_resource_err(resource, "cannot find the lock");
         pthread_mutex_unlock(&grp->mutex);
         return;
     }
     pthread_mutex_lock(&lock->mutex);
-    if (lock->count > 0) {
-        lock->count--;
-        if (lock->count > 0)
-            pthread_cond_signal(&lock->cond);
-        else
-            empty = true;
-    }
+    assert(lock->count > 0);
+    lock->count--;
+    if (lock->count > 0)
+        pthread_cond_signal(&lock->cond);
+    else
+        empty = true;
     pthread_mutex_unlock(&lock->mutex);
     if (empty)
         vres_page_lock_free(grp, lock);
+#endif
     pthread_mutex_unlock(&grp->mutex);
     log_page_unlock(resource);
 }
@@ -737,15 +753,11 @@ vres_chunk_t *vres_page_get_chunk(vres_t *resource, vres_page_t *page)
 
 bool vres_page_chkown(vres_t *resource, vres_page_t *page)
 {
-    vres_chunk_t *chunk = vres_page_get_chunk(resource, page);
-
-    return chunk->owner == resource->owner;
+    return page->owner == resource->owner;
 }
 
 
 void vres_page_mkown(vres_t *resource, vres_page_t *page)
 {
-    vres_chunk_t *chunk = vres_page_get_chunk(resource, page);
-
-    chunk->owner = resource->owner;
+    page->owner = resource->owner;
 }

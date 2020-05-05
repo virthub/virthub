@@ -16,12 +16,6 @@
 int shm_stat = 0;
 int shm_htab[VRES_PAGE_NR_HOLDERS][VRES_LINE_MAX];
 
-inline bool vres_shm_is_page_owner(vres_t *resource, vres_page_t *page)
-{
-    return resource->owner == page->owner;
-}
-
-
 inline bool vres_shm_can_own(vres_t *resource, vres_page_t *page)
 {
 #if MANAGER_TYPE != DYNAMIC_MANAGER
@@ -496,7 +490,7 @@ int vres_shm_spec_reply(vres_page_t *page, vres_req_t *req)
                 log_resource_err(resource, "failed to get peer info");
                 goto out;
             }
-            rsp->req.owner = chunk->owner;
+            rsp->req.owner = page->owner;
             vres_set_flags(&res, VRES_CRIT);
             assert((unsigned long)ptr + sizeof(vres_shm_info_t) - (unsigned long)rsp <= size);
         }
@@ -568,9 +562,9 @@ int vres_shm_request_holders(vres_page_t *page, vres_req_t *req)
         log_resource_err(resource, "invalid request length");
         return -EINVAL;
     }
-    assert(chunk->owner);
+    assert(page->owner);
     shm_req->clk = chunk->clk; // the clk piggybacked on req must be updated.
-    shm_req->owner = chunk->owner;
+    shm_req->owner = page->owner;
     shm_req->cmd = VRES_SHM_NOTIFY_HOLDER;
     ret = vres_shm_do_request_holders(chunk, req);
     shm_req->cmd = cmd;
@@ -612,7 +606,6 @@ int vres_shm_update_holder(vres_page_t *page, vres_req_t *req)
         if (vres_shm_chkown(resource, page) && !vres_page_active(resource, page))
             vres_page_clear_holder_list(resource, chunk);
         page->owner = src;
-        chunk->owner = src;
         log_shm_owner(resource, "new_owner=%d", src);
     }
     log_shm_update_holder(resource, page);
@@ -725,8 +718,8 @@ void vres_shm_do_check_reply(vres_t *resource, vres_page_t *page, vres_chunk_t *
         *reply = true;
     else
         *reply = false;
-    assert(chunk->owner);
-    if (src != chunk->owner) {
+    assert(page->owner);
+    if (src != page->owner) {
         if (!total) {
             if (chunk->holders[0] != src)
                 *tail = chunk->hid == 1;
@@ -846,7 +839,7 @@ reply:
                 log_resource_err(resource, "failed to get peer info");
                 goto out;
             }
-            rsp->req.owner = chunk->owner;
+            rsp->req.owner = page->owner;
             vres_set_flags(&res, VRES_CRIT);
         }
         if (!chown)
@@ -866,6 +859,7 @@ out:
 
 inline bool vres_shm_can_preempt(vres_t *resource, vres_page_t *page)
 {
+#if VRES_CHUNK_MAX > 0
 #ifdef ENABLE_CHUNK_PREEMPT
     int i;
 #endif
@@ -891,6 +885,7 @@ inline bool vres_shm_can_preempt(vres_t *resource, vres_page_t *page)
                 return true;
         }
     }
+#endif
 #endif
     return false;
 }
@@ -990,7 +985,7 @@ int vres_shm_do_check_owner(vres_page_t *page, vres_req_t *req)
         }
     }
     if (!ret) {
-        if (vres_shm_is_page_owner(resource, page)) {
+        if (vres_shm_chkown(resource, page)) {
 #ifdef ENABLE_WRITE_PREEMPT
             if (vres_get_flags(resource) & VRES_RDWR)
 #endif
@@ -1119,10 +1114,7 @@ int vres_shm_do_change_owner(vres_page_t *page, vres_req_t *req)
                 log_resource_err(resource, "invalid member");
                 return ret;
             }
-            if ((page->owner == src) && (chunk->owner != src)) {
-                chown = true;
-            } else if (vres_shm_is_page_owner(resource, page)
-                && ((flags & VRES_RDWR) || (page->nr_candidates < VRES_PAGE_NR_HOLDERS))
+            if (((flags & VRES_RDWR) || (page->nr_candidates < VRES_PAGE_NR_HOLDERS))
                 && ((member.count > 0) || (active < VRES_SHM_NR_AREAS - 1))) {
                 int i;
                 int total = page->nr_candidates;
@@ -1332,9 +1324,6 @@ int vres_shm_deliver(vres_page_t *page, vres_req_t *req)
         return ret;
     }
 #endif
-#ifdef VRES_SHM_DELTA_TIME
-    vres_sleep(VRES_SHM_DELTA_TIME); // time reserved for accessing a page
-#endif
     log_shm_deliver(page, req);
     return 0;
 }
@@ -1418,7 +1407,7 @@ int vres_shm_notify_proposer(vres_req_t *req)
 
         if (!vres_shm_chkown(resource, page)) {
             log_shm_owner(resource, "owner=%d, nr_peers=%d", rsp->req.owner, info->total);
-            chunk->owner = rsp->req.owner;
+            page->owner = rsp->req.owner;
         }
         ret = vres_shm_update_peers(resource, page, info);
         if (ret) {
@@ -1467,6 +1456,9 @@ int vres_shm_notify_proposer(vres_req_t *req)
         if (vres_shm_has_req(resource)) {
             log_shm_notify_proposer(page, req, true);
             vres_page_put(resource, entry);
+#ifdef VRES_SHM_DELTA_TIME
+            vres_sleep(VRES_SHM_DELTA_TIME); // time reserved for accessing a page
+#endif
             return vres_redo(resource, 0);
         }
     }
@@ -1508,16 +1500,11 @@ int vres_shm_handle_zeropage(vres_t *resource, vres_page_t *page)
     vres_id_t src = vres_get_id(resource);
     vres_chunk_t *chunk = vres_page_get_chunk(resource, page);
 
-    assert(!chunk->owner);
-    if (!page->owner)
-        page->owner = resource->owner;
-
-    if (!chunk->owner)
-        vres_shm_mkown(resource, page);
-
+    assert(!page->owner);
+    page->owner = resource->owner;
+    vres_shm_mkown(resource, page);
     if (flags & VRES_RDWR)
         chunk->clk = 1;
-
     ret = vres_page_add_holder(resource, page, chunk, src);
     if (ret) {
         log_resource_err(resource, "failed to add holder");
@@ -1546,7 +1533,7 @@ int vres_shm_handle_zeropage(vres_t *resource, vres_page_t *page)
         }
         memset(rsp, 0, size);
         rsp->req.index = 1;
-        rsp->req.owner = chunk->owner;
+        rsp->req.owner = page->owner;
         rsp->req.cmd = VRES_SHM_NOTIFY_PROPOSER;
         info = (vres_shm_info_t *)&rsp[1];
         if (flags & VRES_RDWR)
@@ -1586,7 +1573,7 @@ int vres_shm_do_forward(vres_page_t *page, vres_req_t *req)
 {
     vres_t *resource = &req->resource;
     vres_chunk_t *chunk = vres_page_get_chunk(resource, page);
-    vres_id_t dest = vres_shm_is_owner(resource) ? chunk->owner : -1;
+    vres_id_t dest = vres_shm_is_owner(resource) ? page->owner : -1;
 
     return vres_shm_request_owner(page, req, dest);
 }
@@ -1654,13 +1641,6 @@ int vres_shm_check_owner(vres_req_t *req, int flags)
             }
             ret = vres_shm_handle_zeropage(resource, page);
             goto out;
-        } else {
-            vres_chunk_t *chunk = vres_page_get_chunk(resource, page);
-
-            if (!chunk->owner) {
-                ret = vres_shm_handle_zeropage(resource, page);
-                goto out;
-            }
         }
     } else if (!entry) {
         log_shm_owner(resource, "*owner mismatch*");
@@ -2002,7 +1982,7 @@ int vres_shm_do_get_peers(vres_t *resource, vres_page_t *page, vres_peers_t *pee
 
     if (!vres_shm_chkown(resource, page)) {
 #ifdef ENABLE_DYNAMIC_OWNER
-        vres_id_t page_owner = chunk->owner;
+        vres_id_t page_owner = page->owner;
 
         if (!page_owner) {
             vres_desc_t desc;
@@ -2011,7 +1991,7 @@ int vres_shm_do_get_peers(vres_t *resource, vres_page_t *page, vres_peers_t *pee
                 log_resource_err(resource, "failed to get owner");
                 return -EINVAL;
             }
-            chunk->owner = desc.id;
+            page->owner = desc.id;
             page_owner = desc.id;
         }
 #else
@@ -2149,7 +2129,7 @@ int vres_shm_check_arg(vres_arg_t *arg)
     arg->in = NULL;
     arg->index = vres_get_pgno(resource);
     chunk = vres_page_get_chunk(resource, page);
-    if (vres_shm_is_owner(resource) && !chunk->owner) {
+    if (vres_shm_is_owner(resource) && !page->owner) {
         ret = vres_shm_handle_zeropage(resource, page);
         if (!ret)
             ret = -EOK;
@@ -2229,7 +2209,7 @@ int vres_shm_get_arg(vres_t *resource, vres_arg_t *arg)
         log_resource_err(resource, "failed to get peers");
         goto out;
     }
-    shm_req->owner = chunk->owner;
+    shm_req->owner = page->owner;
     vres_shm_mkwait(resource, page);
     arg->inlen = size;
     arg->in = (char *)shm_req;

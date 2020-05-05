@@ -25,8 +25,8 @@ static inline unsigned long vres_prio_lock_hash(vres_prio_lock_desc_t *desc)
 {
     vres_prio_lock_entry_t *ent = desc->entry;
 
-    assert(VRES_PRIO_LOCK_ENTRY_SIZE == 3);
-    return (ent[0] ^ ent[1] ^ ent[2]) % VRES_PRIO_LOCK_GROUP_SIZE;
+    assert(VRES_PRIO_LOCK_ENTRY_SIZE == 4);
+    return (ent[0] ^ ent[1] ^ ent[2] ^ ent[3]) % VRES_PRIO_LOCK_GROUP_SIZE;
 }
 
 
@@ -35,6 +35,11 @@ static inline void vres_prio_lock_get_desc(vres_t *resource, vres_prio_lock_desc
     desc->entry[0] = resource->key;
     desc->entry[1] = resource->cls;
     desc->entry[2] = resource->owner;
+    if (vres_get_op(resource) == VRES_OP_SHMFAULT) {
+        desc->entry[3] = vres_get_chunk(resource);
+    } else {
+        desc->entry[3] = 0;
+    }
 }
 
 
@@ -191,21 +196,24 @@ void vres_prio_init()
 
 int vres_prio_do_create(vres_t *resource, vres_time_t off)
 {
+    int i;
     vres_prio_t *prio;
     vres_file_entry_t *entry;
     char path[VRES_PATH_MAX];
 
-    vres_get_priority_path(resource, path);
-    entry = vres_file_get_entry(path, sizeof(vres_prio_t), FILE_RDWR | FILE_CREAT);
-    if (!entry) {
-        log_resource_warning(resource, "no entry");
-        return -ENOENT;
+    for (i = 0; i < VRES_CHUNK_MAX; i++) {
+        vres_get_priority_path_by_chunk(resource, i, path);
+        entry = vres_file_get_entry(path, sizeof(vres_prio_t), FILE_RDWR | FILE_CREAT);
+        if (!entry) {
+            log_resource_warning(resource, "no entry");
+            return -ENOENT;
+        }
+        prio = vres_file_get_desc(entry, vres_prio_t);
+        memset(prio, 0, sizeof(vres_prio_t));
+        prio->t_off = off;
+        prio->t_sync = vres_get_time();
+        vres_file_put_entry(entry);
     }
-    prio = vres_file_get_desc(entry, vres_prio_t);
-    memset(prio, 0, sizeof(vres_prio_t));
-    prio->t_off = off;
-    prio->t_sync = vres_get_time();
-    vres_file_put_entry(entry);
     log_prio_create(resource, off);
     return 0;
 }
@@ -451,8 +459,8 @@ bool vres_prio_safe_check(vres_t *resource, vres_index_t index)
 
     if (flags & VRES_RDONLY)
         return true;
-    
-    vres_get_path(resource, path);
+
+    vres_get_checker_path(resource, path);
     if (!vres_record_head(path, &pos)) {
         if (pos != index) {
             assert(pos < index);
@@ -491,7 +499,7 @@ void *vres_prio_select(void *arg)
     char path[VRES_PATH_MAX];
     vres_t *resource = (vres_t *)arg;
 
-    vres_get_path(resource, path);
+    vres_get_checker_path(resource, path);
     do {
         vres_index_t index;
 
@@ -632,7 +640,7 @@ int vres_prio_monitor(vres_req_t *req)
     char path[VRES_PATH_MAX];
     vres_t *resource = &req->resource;
 
-    vres_get_path(resource, path);
+    vres_get_checker_path(resource, path);
     ret = vres_record_save(path, req, &index);
     if (ret) {
         log_resource_warning(resource, "failed to save record");

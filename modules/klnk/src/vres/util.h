@@ -25,7 +25,7 @@
 #define vres_entry_val1(entry) ((vres_val_t)(entry)[VRES_POS_VAL1])
 #define vres_entry_val2(entry) ((vres_val_t)(entry)[VRES_POS_VAL2])
 #define vres_entry_index(entry) ((vres_index_t)(entry)[VRES_POS_INDEX])
-#define vres_entry_pgno(entry) (vres_entry_off(entry) >> VRES_PAGE_SHIFT)
+#define vres_entry_chunk(entry) (vres_entry_off(entry) >> VRES_CHUNK_SHIFT)
 
 #define vres_get_err(p) ((p)->length)
 #define vres_has_err(p) ((p)->length < 0)

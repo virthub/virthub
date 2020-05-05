@@ -18,7 +18,7 @@ static inline unsigned long vres_get_queue(vres_entry_t *entry)
         queue = 1;
         break;
     case VRES_OP_SHMFAULT:
-        queue = vres_entry_pgno(entry);
+        queue = vres_entry_chunk(entry);
         break;
     default:
         queue = 0;
@@ -122,6 +122,19 @@ void vres_get_record_path(vres_t *resource, char *path)
 }
 
 
+void vres_get_checker_path_by_chunk(vres_t *resource, unsigned long chunk, char *path)
+{
+    vres_get_path(resource, path);
+    vres_path_append_checker(path, chunk);
+    strcat(path, VRES_PATH_SEPERATOR);
+}
+
+
+void vres_get_checker_path(vres_t *resource, char *path)
+{
+    vres_get_checker_path_by_chunk(resource, vres_get_chunk(resource), path);
+}
+
 void vres_get_temp_path(vres_t *resource, char *path)
 {
     vres_get_record_path(resource, path);
@@ -136,10 +149,16 @@ void vres_get_update_path(vres_t *resource, char *path)
 }
 
 
-void vres_get_priority_path(vres_t *resource, char *path)
+void vres_get_priority_path_by_chunk(vres_t *resource, unsigned long chunk, char *path)
 {
     vres_get_path(resource, path);
-    vres_path_append_priority(path);
+    vres_path_append_priority(path, chunk);
+}
+
+
+void vres_get_priority_path(vres_t *resource, char *path)
+{
+    vres_get_priority_path_by_chunk(resource, vres_get_chunk(resource), path);
 }
 
 
@@ -216,7 +235,7 @@ int vres_mkdir(vres_t *resource)
     if (!vres_file_is_dir(path)) {
         ret = vres_file_mkdir(path);
         if (ret) {
-            log_resource_warning(resource, "failed to create directory");
+            log_resource_warning(resource, "failed to create root directory");
             return ret;
         }
     }
@@ -224,7 +243,7 @@ int vres_mkdir(vres_t *resource)
     if (!vres_file_is_dir(path)) {
         ret = vres_file_mkdir(path);
         if (ret) {
-            log_resource_warning(resource, "failed to create directory");
+            log_resource_warning(resource, "failed to create class directory");
             return ret;
         }
     }
@@ -232,8 +251,22 @@ int vres_mkdir(vres_t *resource)
     if (!vres_file_is_dir(path)) {
         ret = vres_file_mkdir(path);
         if (ret) {
-            log_resource_warning(resource, "failed to create directory");
+            log_resource_warning(resource, "failed to create resource directory");
             return ret;
+        }
+    }
+    if (VRES_CLS_SHM == resource->cls) {
+        unsigned long i;
+
+        for (i = 0; i < VRES_CHUNK_MAX; i++) {
+            vres_get_checker_path_by_chunk(resource, i, path);
+            if (!vres_file_is_dir(path)) {
+                ret = vres_file_mkdir(path);
+                if (ret) {
+                    log_resource_warning(resource, "failed to create checker directory");
+                    return ret;
+                }
+            }
         }
     }
     return 0;
