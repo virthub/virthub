@@ -14,7 +14,6 @@
 #define ENABLE_PRIORITY
 #define ENABLE_PAGE_CHECK
 #define ENABLE_PAGE_PREEMPT
-#define ENABLE_TIMED_PREEMPT
 #define ENABLE_DYNAMIC_OWNER
 #define ENABLE_PARTIAL_PROTECTION
 
@@ -23,8 +22,7 @@
 // #define ENABLE_TSKPUT
 // #define ENABLE_BARRIER
 // #define ENABLE_TIME_SYNC
-// #define ENABLE_CHUNK_PREEMPT
-// #define ENABLE_WRITE_PREEMPT
+// #define ENABLE_TIMED_PREEMPT
 // #define ENABLE_PREEMPT_COUNT
 
 //----------------------------------------------------------//

@@ -292,18 +292,21 @@ static void vres_page_unlock(vres_t *resource)
         pthread_mutex_unlock(&grp->mutex);
         return;
     }
-    pthread_mutex_lock(&lock->mutex);
     assert(lock->count > 0);
     lock->count--;
-    if (lock->count > 0)
+    if (lock->count > 0) {
+        pthread_mutex_lock(&lock->mutex);
         pthread_cond_signal(&lock->cond);
-    else
+    } else {
         empty = true;
-    pthread_mutex_unlock(&lock->mutex);
-    if (empty)
         vres_page_lock_free(grp, lock);
+    }
 #endif
     pthread_mutex_unlock(&grp->mutex);
+#ifndef VRES_PAGE_GRP_LOCK
+    if (!empty)
+        pthread_mutex_unlock(&lock->mutex);
+#endif
     log_page_unlock(resource);
 }
 

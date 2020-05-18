@@ -68,12 +68,6 @@ typedef struct vres_chunk {
     vres_clk_t clk;
     int nr_candidates;
     vres_index_t index;
-#ifdef ENABLE_CHUNK_PREEMPT
-    vres_id_t preemptor;
-#ifdef ENABLE_TIMED_PREEMPT
-    vres_time_t t_preempt;
-#endif
-#endif
     int nr_silent_holders;
     vres_version_t version;
     char buf[VRES_CHUNK_SIZE];

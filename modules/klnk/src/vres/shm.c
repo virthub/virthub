@@ -859,33 +859,15 @@ out:
 
 inline bool vres_shm_can_preempt(vres_t *resource, vres_page_t *page)
 {
-#if VRES_CHUNK_MAX > 0
-#ifdef ENABLE_CHUNK_PREEMPT
-    int i;
-#endif
-#if defined (ENABLE_PAGE_PREEMPT) || defined(ENABLE_CHUNK_PREEMPT)
-    vres_id_t src = vres_get_id(resource);
-#endif
     if (vres_get_flags(resource) & VRES_PRIO)
         return true;
-#ifdef ENABLE_PAGE_PREEMPT
-    if (page->preemptor == src) {
+#if defined(ENABLE_PAGE_PREEMPT) && VRES_CHUNK_MAX > 1
+    if (page->preemptor == vres_get_id(resource)) {
 #ifdef ENABLE_TIMED_PREEMPT
-        if (vres_get_time() - page->t_preempt <= VRES_SHM_PREEMPT_INTV)
+        if (vres_get_time() - page->t_preempt < VRES_SHM_PREEMPT_INTV)
 #endif
             return true;
     }
-#endif
-#ifdef ENABLE_CHUNK_PREEMPT
-    for (i = 0; i < VRES_CHUNK_MAX; i++) {
-        if (page->chunks[i].preemptor == src) {
-#ifdef ENABLE_TIMED_PREEMPT
-            if (vres_get_time() - page->chunks[i].t_preempt <= VRES_SHM_PREEMPT_INTV)
-#endif
-                return true;
-        }
-    }
-#endif
 #endif
     return false;
 }
@@ -931,6 +913,17 @@ int vres_shm_update_owner(vres_t *resource, vres_page_t *page)
     return vres_dmgr_update_owner(resource, page);
 #else
     return 0;
+#endif
+}
+
+
+inline void vres_shm_set_preemptor(vres_page_t *page)
+{
+#ifdef ENABLE_PAGE_PREEMPT
+    page->preemptor = page->owner;
+#ifdef ENABLE_TIMED_PREEMPT
+    page->t_preempt = vres_get_time();
+#endif
 #endif
 }
 
@@ -985,27 +978,8 @@ int vres_shm_do_check_owner(vres_page_t *page, vres_req_t *req)
         }
     }
     if (!ret) {
-        if (vres_shm_chkown(resource, page)) {
-#ifdef ENABLE_WRITE_PREEMPT
-            if (vres_get_flags(resource) & VRES_RDWR)
-#endif
-            {
-#ifdef ENABLE_CHUNK_PREEMPT
-                vres_chunk_t *chunk = vres_page_get_chunk(resource, page);
-
-                chunk->preemptor = vres_get_id(resource);
-#ifdef ENABLE_TIMED_PREEMPT
-                chunk->t_preempt = vres_get_time();
-#endif
-#endif
-#ifdef ENABLE_PAGE_PREEMPT
-                page->preemptor = vres_get_id(resource);
-#ifdef ENABLE_TIMED_PREEMPT
-                page->t_preempt = vres_get_time();
-#endif
-#endif
-            }
-        }
+        if (vres_shm_chkown(resource, page))
+            vres_shm_set_preemptor(page);
         log_shm_do_check_owner(page, req);
     }
     return -EAGAIN == ret ? 0 : ret;
@@ -1456,8 +1430,8 @@ int vres_shm_notify_proposer(vres_req_t *req)
         if (vres_shm_has_req(resource)) {
             log_shm_notify_proposer(page, req, true);
             vres_page_put(resource, entry);
-#ifdef VRES_SHM_DELTA_TIME
-            vres_sleep(VRES_SHM_DELTA_TIME); // time reserved for accessing a page
+#ifdef VRES_SHM_KEEP_ACCESSING
+            vres_sleep(VRES_SHM_ACCESS_TIME);
 #endif
             return vres_redo(resource, 0);
         }
@@ -1520,6 +1494,7 @@ int vres_shm_handle_zeropage(vres_t *resource, vres_page_t *page)
         chunk->hid = vres_page_get_hid(chunk, src);
         vres_page_mkpresent(resource, page);
         vres_page_mkactive(resource, page);
+        vres_shm_set_preemptor(page);
     } else {
         vres_shm_rsp_t *rsp;
         vres_shm_info_t *info;
@@ -2200,9 +2175,10 @@ int vres_shm_get_arg(vres_t *resource, vres_arg_t *arg)
     shm_req->clk = chunk->clk;
     shm_req->version = chunk->version;
     shm_req->index = vres_page_alloc_index(chunk);
-    if (vres_shm_chkown(resource, page))
+    if (vres_shm_chkown(resource, page)) {
         shm_req->cmd = VRES_SHM_CHK_HOLDER;
-    else
+        vres_shm_set_preemptor(page);
+    } else
         shm_req->cmd = VRES_SHM_CHK_OWNER;
     ret = vres_shm_get_peers(resource, page, &shm_req->peers);
     if (ret) {
