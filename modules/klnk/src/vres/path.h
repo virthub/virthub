@@ -15,6 +15,7 @@
 #define VRES_PATH_HOLDER    "h"
 #define VRES_PATH_MEMBER    "m"
 #define VRES_PATH_UPDATE    "u"
+#define VRES_PATH_CHECKER   "c"
 #define VRES_PATH_CHECKIN   "i"
 #define VRES_PATH_CHECKOUT  "o"
 #define VRES_PATH_PRIORITY  "p"
@@ -26,17 +27,19 @@
 #define vres_path_append_temp(path)     strcat(path, VRES_PATH_TEMP)
 #define vres_path_append_event(path)    strcat(path, VRES_PATH_EVENT)
 #define vres_path_append_state(path)    strcat(path, VRES_PATH_STATE)
-#define vres_path_append_holder(path)   strcat(path, VRES_PATH_HOLDER)
 #define vres_path_append_member(path)   strcat(path, VRES_PATH_MEMBER)
 #define vres_path_append_action(path)   strcat(path, VRES_PATH_ACTION)
 #define vres_path_append_update(path)   strcat(path, VRES_PATH_UPDATE)
 #define vres_path_append_checkin(path)  strcat(path, VRES_PATH_CHECKIN)
 #define vres_path_append_checkout(path) strcat(path, VRES_PATH_CHECKOUT)
-#define vres_path_append_priority(path) strcat(path, VRES_PATH_PRIORITY)
 
 #define vres_path_append_num(path, num) sprintf(path + strlen(path), "%lx", (unsigned long)num)
 #define vres_path_append_idx(path, idx) sprintf(path + strlen(path), "%ld", (unsigned long)idx)
 #define vres_path_append_que(path, que) sprintf(path + strlen(path), "%lx_", (unsigned long)que)
+
+#define vres_path_append_holder(path, chunk) sprintf(path + strlen(path), "%s_%lx", VRES_PATH_HOLDER, (unsigned long)chunk)
+#define vres_path_append_checker(path, chunk) sprintf(path + strlen(path), "%s_%lx", VRES_PATH_CHECKER, (unsigned long)chunk)
+#define vres_path_append_priority(path, chunk) sprintf(path + strlen(path), "%s_%lx", VRES_PATH_PRIORITY, (unsigned long)chunk)
 
 #define vres_path_append_own vres_path_append_num // 1st level
 #define vres_path_append_cls vres_path_append_num // 2nd level
@@ -59,10 +62,12 @@ void vres_get_holder_path(vres_t *resource, char *path);
 void vres_get_record_path(vres_t *resource, char *path);
 void vres_get_update_path(vres_t *resource, char *path);
 void vres_get_priority_path(vres_t *resource, char *path);
+void vres_get_priority_path_by_chunk(vres_t *resource, unsigned long chunk, char *path);
 
 int vres_mkdir(vres_t *resource);
-bool vres_is_key_path(char *path);
 int vres_get_resource(const char *path, vres_t *resource);
 int vres_path_join(const char *p1, const char *p2, char *path);
+
+bool vres_is_key_path(char *path);
 
 #endif

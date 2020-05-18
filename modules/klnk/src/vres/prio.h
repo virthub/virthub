@@ -10,9 +10,9 @@
 
 #define VRES_PRIO_SYNC_TIME
 #define VRES_PRIO_LOCK_GROUP_SIZE 256
-#define VRES_PRIO_LOCK_ENTRY_SIZE 3
+#define VRES_PRIO_LOCK_ENTRY_SIZE 4
 #define VRES_PRIO_RETRY_MAX       16
-#define VRES_PRIO_NR_REPEATS      4
+#define VRES_PRIO_NR_REPEATS      10
 #define VRES_PRIO_NR_INTERVALS    256
 #define VRES_PRIO_PERIOD          200000   // usec
 #define VRES_PRIO_WAITTIME        (VRES_PRIO_PERIOD / 100)
@@ -25,14 +25,14 @@
 #endif
 
 #ifdef SHOW_PRIO
+#define LOG_PRIO_LOCK
 #define LOG_PRIO_CHECK
 #define LOG_PRIO_SELECT
-
-#ifdef SHOW_MORE
-#define LOG_PRIO_LOCK
-#define LOG_PRIO_CREATE
 #define LOG_PRIO_SET_BUSY
 #define LOG_PRIO_SET_IDLE
+
+#ifdef SHOW_MORE
+#define LOG_PRIO_CREATE
 #define LOG_PRIO_SYNC_TIME
 #endif
 #endif

@@ -7,7 +7,7 @@
 
 #define TSK_RESERVE
 #define TSK_REALLOC
-#define TSK_ID_START 1024 // the TSK_ID_START should be greater than then the nunber of managers
+#define TSK_ID_START 1024
 
 enum vres_tsk_cmd {
     VRES_TSK_WAKEUP=1,
@@ -23,12 +23,6 @@ enum vres_tsk_cmd {
 #endif
 
 #include "log_tsk.h"
-
-#ifdef SHOW_TSK
-#define tsk_log log_resource_ln
-#else
-#define tsk_log(...) do {} while(0)
-#endif
 
 typedef struct vres_tskctl_arg {
     int cmd;

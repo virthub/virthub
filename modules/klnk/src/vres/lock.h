@@ -9,7 +9,7 @@
 #include "trace.h"
 
 #define VRES_LOCK_TIMEOUT    1000000 // usec
-#define VRES_LOCK_GROUP_SIZE 256
+#define VRES_LOCK_GROUP_SIZE 1024
 #define VRES_LOCK_ENTRY_SIZE 4
 
 #ifdef SHOW_LOCK

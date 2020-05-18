@@ -20,7 +20,7 @@
 #include "log_member.h"
 
 #define VRES_MEMBER_MAX     256
-#define VRES_MEMBER_REQ_MAX 256
+#define VRES_MEMBER_REQ_MAX 65536
 
 typedef struct vres_members {
     int total;

@@ -21,3 +21,7 @@
 - Remove live-time support of the proirity setting for distributed shared memory
 - Revise the preemption mechanism in scheduling the requests of distributed shared memory 
 - Add support of logical page
+
+## [0.0.6]
+- Add support of page partitioning for the shared memory
+- Add support of partial protection for the shared memory

@@ -16,9 +16,6 @@ int vres_tsk_get(vres_t *resource, vres_id_t *id)
     vres_id_t curr = resource->key;
     vres_t *tsk = &res;
 
-#if MANAGER_TYPE == AREA_MANAGER
-    assert(resource->key >= TSK_ID_START);
-#endif
     assert((vres_get_id(resource) == resource->owner) && (resource->key == resource->owner));
     vres_lock(resource);
     for (i = 0; i < retry_max; i++) {
@@ -232,7 +229,6 @@ int vres_tsk_wakeup(vres_t *resource)
                 master_name, PATH_DUMP, resource->owner);
         log_tsk_wakeup(cmd);
         system(cmd);
-        tsk_log(resource);
         _exit(0);
     }
 

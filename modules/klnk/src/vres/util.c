@@ -42,6 +42,60 @@ int vres_get_errno(vres_reply_t *reply)
 }
 
 
+vres_op_t vres_get_op(vres_t *resource)
+{
+    return vres_entry_op(resource->entry);
+}
+
+
+vres_id_t vres_get_id(vres_t *resource)
+{
+    return vres_entry_id(resource->entry);
+}
+
+
+vres_flg_t vres_get_flags(vres_t *resource)
+{
+    return vres_entry_flags(resource->entry);
+}
+
+
+unsigned long vres_get_off(vres_t *resource)
+{
+    return vres_entry_off(resource->entry);
+}
+
+
+unsigned long vres_get_page_off(vres_t *resource) 
+{
+    return vres_get_off(resource) & ((1 << VRES_PAGE_SHIFT) - 1);
+}
+
+
+unsigned long vres_get_chunk(vres_t *resource)
+{
+    return vres_get_page_off(resource) >> VRES_CHUNK_SHIFT;
+}
+
+
+unsigned long vres_get_chunk_off(vres_t *resource)
+{ 
+    return vres_get_page_off(resource) & ((1 << VRES_CHUNK_SHIFT) - 1);
+}
+
+
+unsigned long vres_get_chunk_start(vres_t *resource)
+{
+    return vres_get_chunk(resource) << VRES_CHUNK_SHIFT;
+}
+
+
+unsigned long vres_get_page_start(vres_t *resource)
+{
+    return vres_get_pgno(resource) << VRES_PAGE_SHIFT;
+}
+
+
 bool vres_can_expose(vres_t *resource)
 {
     vres_op_t op = vres_get_op(resource);
@@ -57,7 +111,7 @@ bool vres_can_restart(vres_t *resource)
 {
     vres_cls_t cls = resource->cls;
 
-    if((VRES_CLS_MSG == cls) || (VRES_CLS_SEM == cls) || (VRES_CLS_TSK == cls))
+    if ((VRES_CLS_MSG == cls) || (VRES_CLS_SEM == cls) || (VRES_CLS_TSK == cls))
         return true;
     else
         return false;
@@ -88,30 +142,6 @@ void vres_set_entry(vres_entry_t *entry, vres_op_t op, vres_id_t id, vres_val_t 
     entry[VRES_POS_ID] = (vres_entry_t)id;
     entry[VRES_POS_VAL1] = (vres_entry_t)val1;
     entry[VRES_POS_VAL2] = (vres_entry_t)val2;
-}
-
-
-vres_op_t vres_get_op(vres_t *resource)
-{
-    return vres_entry_op(resource->entry);
-}
-
-
-vres_id_t vres_get_id(vres_t *resource)
-{
-    return vres_entry_id(resource->entry);
-}
-
-
-vres_flg_t vres_get_flags(vres_t *resource)
-{
-    return vres_entry_flags(resource->entry);
-}
-
-
-unsigned long vres_get_off(vres_t *resource)
-{
-    return vres_entry_off(resource->entry);
 }
 
 

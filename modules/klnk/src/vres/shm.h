@@ -18,19 +18,20 @@
 #include "line.h"
 #include "tsk.h"
 
-// #define VRES_SHM_EXTEND_HOLD_TIME
+#define VRES_SHM_KEEP_ACCESSING
 
-#define VRES_SHM_PEER_MAX   4
-#define VRES_SHM_NR_PEERS   (VRES_SHM_PEER_MAX > (VRES_PAGE_NR_HOLDERS - 1) ? (VRES_PAGE_NR_HOLDERS - 1) : VRES_SHM_PEER_MAX)
-#define VRES_SHM_NR_AREAS   4
-#define VRES_SHM_NR_VISITS  2
-#define VRES_SHM_HOLD_INTV  5000 // usec
+#define VRES_SHM_PEER_MAX     8
+#define VRES_SHM_NR_PEERS     (VRES_SHM_PEER_MAX > (VRES_PAGE_NR_HOLDERS - 1) ? (VRES_PAGE_NR_HOLDERS - 1) : VRES_SHM_PEER_MAX)
+#define VRES_SHM_NR_AREAS     4
+#define VRES_SHM_NR_VISITS    2
+#define VRES_SHM_ACCESS_TIME  10000 // usec
+#define VRES_SHM_PREEMPT_INTV VRES_PRIO_PERIOD
 
-#define VRES_SHMMAX         0x2000000                                         /* max shared seg size (bytes) */
-#define VRES_SHMMIN         1                                                 /* min shared seg size (bytes) */
-#define VRES_SHMMNI         4096                                              /* max num of segs system wide */
-#define VRES_SHMALL         (VRES_SHMMAX / PAGE_SIZE * (VRES_SHMMNI / 16))    /* max shm system wide (pages) */
-#define VRES_SHMSEG         VRES_SHMMNI                                       /* max shared segs per process */
+#define VRES_SHMMAX           0x2000000                                         /* max shared seg size (bytes) */
+#define VRES_SHMMIN           1                                                 /* min shared seg size (bytes) */
+#define VRES_SHMMNI           4096                                              /* max num of segs system wide */
+#define VRES_SHMALL           (VRES_SHMMAX / PAGE_SIZE * (VRES_SHMMNI / 16))    /* max shm system wide (pages) */
+#define VRES_SHMSEG           VRES_SHMMNI                                       /* max shared segs per process */
 
 #ifdef SHOW_SHM
 #define LOG_SHM_OWNER
@@ -39,6 +40,7 @@
 #define LOG_SHM_LINE_NUM
 #define LOG_SHM_SAVE_REQ
 #define LOG_SHM_GET_ARGS
+#define LOG_SHM_GET_PEERS
 #define LOG_SHM_SPEC_REPLY
 #define LOG_SHM_CHECK_REPLY
 #define LOG_SHM_CHECK_OWNER
@@ -57,12 +59,12 @@
 #define LOG_SHM_REQUEST_SILENT_HOLERS
 
 #ifdef SHOW_MORE
-#define LOG_SHM_REPLY
 #define LOG_SHM_LINES
 #define LOG_SHM_RECORD
 #define LOG_SHM_WAKEUP
 #define LOG_SHM_SAVE_PAGE
 #define LOG_SHM_PAGE_DIFF
+#define LOG_SHM_FAST_REPLY
 #define LOG_SHM_CHECK_ARGS
 #define LOG_SHM_PAGE_CONTENT
 #define LOG_SHM_SAVE_UPDATES
@@ -73,7 +75,7 @@
 #include "log_shm.h"
 
 #define vres_shm_get_record_path vres_get_temp_path
-#define vres_shm_is_silent_holder(page) (!(page)->hid)
+#define vres_shm_is_silent_holder(chunk) (!(chunk)->hid)
 
 enum vres_shm_cmd {
     VRES_SHM_UNUSED0,

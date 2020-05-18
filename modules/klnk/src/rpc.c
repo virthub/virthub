@@ -110,8 +110,8 @@ int klnk_rpc_wait(vres_arg_t *arg)
 
     if (-1 == arg->index)
         return 0;
-    log_klnk_rpc_wait(&res, ">-- rpc_wait (begin) --<");
     vres_set_off(&res, arg->index);
+    log_klnk_rpc_wait(&res, ">-- rpc_wait (begin) --<");
     ret = vres_event_wait(&res, arg->out, arg->outlen, arg->timeout);
     if (arg->timeout && (-ETIMEDOUT == ret)) {
         assert(res.cls != VRES_OP_SHMFAULT);

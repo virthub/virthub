@@ -20,12 +20,12 @@
 
 #define vres_entry_off(entry) vres_entry_val1(entry)
 #define vres_entry_flags(entry) vres_entry_val2(entry)
-#define vres_entry_op(entry) ((vres_op_t)entry[VRES_POS_OP])
-#define vres_entry_id(entry) ((vres_id_t)entry[VRES_POS_ID])
-#define vres_entry_val1(entry) ((vres_val_t)entry[VRES_POS_VAL1])
-#define vres_entry_val2(entry) ((vres_val_t)entry[VRES_POS_VAL2])
-#define vres_entry_index(entry) ((vres_index_t)entry[VRES_POS_INDEX])
-#define vres_entry_pgno(entry) (vres_entry_off(entry) >> VRES_PAGE_SHIFT)
+#define vres_entry_op(entry) ((vres_op_t)(entry)[VRES_POS_OP])
+#define vres_entry_id(entry) ((vres_id_t)(entry)[VRES_POS_ID])
+#define vres_entry_val1(entry) ((vres_val_t)(entry)[VRES_POS_VAL1])
+#define vres_entry_val2(entry) ((vres_val_t)(entry)[VRES_POS_VAL2])
+#define vres_entry_index(entry) ((vres_index_t)(entry)[VRES_POS_INDEX])
+#define vres_entry_chunk(entry) (vres_entry_off(entry) >> VRES_CHUNK_SHIFT)
 
 #define vres_get_err(p) ((p)->length)
 #define vres_has_err(p) ((p)->length < 0)
@@ -74,16 +74,21 @@ bool vres_need_timed_lock(vres_t *resource);
 bool vres_can_expose(vres_t *resource);
 bool vres_can_restart(vres_t *resource);
 
+vres_op_t vres_get_op(vres_t *resource);
+vres_id_t vres_get_id(vres_t *resource);
+vres_flg_t vres_get_flags(vres_t *resource);
+unsigned long vres_get_off(vres_t *resource);
+unsigned long vres_get_chunk(vres_t *resource);
+unsigned long vres_get_nr_queues(vres_cls_t cls);
+unsigned long vres_get_page_off(vres_t *resource);
+unsigned long vres_get_chunk_off(vres_t *resource);
+unsigned long vres_get_page_start(vres_t *resource);
+unsigned long vres_get_chunk_start(vres_t *resource);
+
 int vres_err_to_index(int err);
 int vres_get_errno(vres_reply_t *reply);
 int vres_index_to_err(vres_index_t index);
 int vres_memget(unsigned long addr, size_t size, char **buf);
-
-vres_id_t vres_get_id(vres_t *resource);
-vres_op_t vres_get_op(vres_t *resource);
-vres_flg_t vres_get_flags(vres_t *resource);
-unsigned long vres_get_off(vres_t *resource);
-unsigned long vres_get_nr_queues(vres_cls_t cls);
 
 vres_time_t vres_get_time();
 vres_time_t vres_get_time_offset(vres_time_t start, vres_time_t ref);
