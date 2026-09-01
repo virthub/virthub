@@ -1,0 +1,36 @@
+# virthub/src/klnk/klnk-net/Cargo.toml
+
+[package]
+name = "klnk-net"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Network transport and control plane communication for klnk"
+
+[dependencies]
+# Internal Workspace Dependencies
+klnk-core = { path = "../klnk-core" }
+
+# Data Serialization & Buffer Utilities
+bincode = { workspace = true }
+bytes = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+
+# Transport & Async I/O
+quinn = { version = "0.10", optional = true }
+tokio = { workspace = true, features = ["sync", "net", "io-util", "macros"] }
+tokio-util = { workspace = true, features = ["codec"] }
+tokio-uring = "0.4"
+
+# Diagnostics & Error Handling
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tempfile = "3.0"
+
+[features]
+default = []
+quinn = ["dep:quinn"]

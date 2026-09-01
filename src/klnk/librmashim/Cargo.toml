@@ -1,0 +1,48 @@
+# virthub/src/klnk/librmashim/Cargo.toml
+
+[package]
+name = "librmashim"
+version = "0.1.0"
+edition = "2021"
+authors = ["Virthub Contributors"]
+description = "RDMA and socket transport shim for Virthub DSM"
+license = "MIT"
+readme = "README.md"
+
+[lib]
+name = "librmashim"
+crate-type = ["rlib", "cdylib"]
+
+[features]
+default = ["tcp"]
+tcp = []
+
+[dependencies]
+virthub_config = { path = "../../config" }
+dashmap = { workspace = true }
+parking_lot = { workspace = true }
+bytes = { workspace = true }
+tokio = { workspace = true, features = ["sync", "rt", "macros", "net", "io-util", "time"] }
+tokio-util = { workspace = true, features = ["codec"] }
+libc = { workspace = true }
+nix = { workspace = true, features = ["socket", "mman", "poll"] }
+thiserror = { workspace = true }
+futures = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+bincode = "1.3"
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util", "time", "fs"] }
+tempfile = "3.0"
+rand = "0.8"
+serial_test = "3.0"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = { workspace = true }
+nix = { workspace = true, features = ["socket", "mman", "poll"] }
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+nix = { workspace = true, features = ["socket", "mman", "poll", "user"] }

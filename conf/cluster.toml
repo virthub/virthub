@@ -1,0 +1,91 @@
+# conf/cluster.toml
+
+[general]
+log_level = "info"
+# Unix domain socket for the control plane (per‑node unique path recommended
+# in production, e.g., /var/run/virthub/node-1.sock)
+control_socket = "/tmp/virthub_control.sock"
+# Network address for the data plane – set to the node’s actual IP or 0.0.0.0
+data_bind_addr = "0.0.0.0:19001"
+# **Unique** identifier for this node (change to node-1, node-2, node-3, …)
+node_id = "node-1"
+
+[klnk]
+enable_uffd_move = true
+fallback_copy = true
+staging_num_pages = 64
+huge_page_size = 2097152
+
+[store]
+block_size = 2097152
+
+[store.tier]
+l0_enabled = true
+l0_device_ids = [0, 1, 2, 3]          # GPU devices available on this node
+l1_enabled = true
+l1_high_watermark = 0.85
+l1_low_watermark  = 0.70
+l2_enabled = true
+l2_path = "/mnt/nvme/virthub_cache"
+l2_max_size_gb = 200
+
+[master]
+[master.raft]
+embedded = true
+# All node IDs that form the initial cluster – same list on every node
+initial_peers = ["node-1", "node-2", "node-3"]
+# External etcd is not used when embedded = true; these endpoints are ignored
+etcd_endpoints = ["http://127.0.0.1:2379"]
+
+[master.scheduler]
+prefetch_window = 8
+l0_promote_threshold = 100
+l1_demote_idle_secs = 60
+lru_decay = 0.8
+
+[master.sharding]
+shard_count = 64
+
+[transport]
+default_protocol = "rdma"
+
+[transport.rdma]
+device_name = ""                     # auto‑selects the first available RDMA device
+enable_gdr = true                    # GPUDirect RDMA enabled
+rq_prepost_count = 2048
+control_immediate = true
+selective_signaling = true
+signal_batch_size = 16
+
+[transport.tcp]
+io_uring_enabled = true
+tcp_port = 19002                     # used for TCP fallback and control messaging
+
+[ebpf]
+enabled = true
+program_path = "/usr/lib/virthub/stride_tracer.bpf.o"
+report_interval_ms = 100
+
+[tuning]
+numa_node = -1                       # auto‑detect; set to a specific NUMA node if desired
+operation_timeout_ms = 500
+memlock_limit = 17179869184          # 16 GB – adjust to match your staging pool size
+
+[vllm]
+connector_version = "auto"           # "auto" selects V2 if available, else V1
+
+[security]
+enable_auth = false
+# tls_cert_path = "/etc/virthub/certs/server.crt"
+# tls_key_path  = "/etc/virthub/certs/server.key"
+
+[observability]
+metrics_bind_addr = "0.0.0.0:9090"
+detailed_latency = false
+# tracing_endpoint = "http://jaeger:14268/api/traces"
+
+[validation]
+strict_mode = false
+validate_hardware = true
+required_kernel_features = "userfaultfd, huge_pages, rdma_cm"
+min_kernel_version = "6.8.0"

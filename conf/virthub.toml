@@ -1,0 +1,140 @@
+# conf/virthub.toml
+
+[general]
+# Log level: trace, debug, info, warn, error
+log_level = "info"
+# Unix domain socket path for the control plane
+control_socket = "/tmp/virthub_control.sock"
+# Network address (IP:Port) for the data plane (RDMA or TCP)
+data_bind_addr = "0.0.0.0:19001"
+# Unique node identifier (auto‑generated if not set)
+node_id = "node-1"
+
+[klnk]
+# Enable zero‑copy UFFDIO_MOVE (requires Linux 6.8+)
+enable_uffd_move = true
+# Fall back to UFFDIO_COPY if UFFDIO_MOVE is not supported
+fallback_copy = true
+# Number of 2MB Huge Pages pre‑allocated as staging pool per SHM region
+staging_num_pages = 16
+# Huge page size (fixed 2MB; do not change)
+huge_page_size = 2097152
+
+[store]
+# Tiered storage settings
+[store.tier]
+# L0: GPU VRAM (requires GPUDirect RDMA support)
+l0_enabled = false
+l0_device_ids = [0, 1]          # GPU device IDs if enabled
+# L1: Host DRAM (enabled by default)
+l1_enabled = true
+# Maximum L1 capacity in blocks (0 = unlimited)
+l1_max_blocks = 8192
+# High / low watermarks for proactive eviction
+l1_high_watermark = 0.85
+l1_low_watermark = 0.70
+# L2: NVMe SSD
+l2_enabled = false
+l2_path = "/mnt/nvme/virthub_cache"
+l2_max_size_gb = 100
+l2_max_iops = 10000
+
+# Block size in bytes; must align with huge page size
+block_size = 2097152
+
+[master]
+# Raft consensus settings
+[master.raft]
+# Use embedded Raft (if false, connect to external etcd)
+embedded = true
+# Initial cluster peers (only for embedded Raft)
+initial_peers = ["node-1", "node-2", "node-3"]
+# External etcd endpoints (if embedded = false)
+etcd_endpoints = ["http://127.0.0.1:2379"]
+
+# Scheduler & eviction policies
+[master.scheduler]
+# Number of blocks to prefetch ahead
+prefetch_window = 8
+# Access count per minute to promote a block to L0 (GPU VRAM)
+l0_promote_threshold = 100
+# Idle time in seconds before demoting from L1 to L2
+l1_demote_idle_secs = 60
+# LRFU decay factor (0–1); higher values give more weight to recent accesses
+lru_decay = 0.8
+
+# Distributed sharding for the Radix Tree
+[master.sharding]
+# Number of shards (should be a power of two)
+shard_count = 64
+
+[transport]
+# Default protocol: "rdma" or "tcp"
+default_protocol = "rdma"
+
+[transport.rdma]
+# RDMA device name (auto‑select if empty)
+device_name = ""
+# Enable GPUDirect RDMA for GPU VRAM tier
+enable_gdr = false
+# Number of pre‑posted Receive Queue Work Requests (prevents RNR errors)
+rq_prepost_count = 1024
+# Use RDMA Immediate Data for control messages (<1µs latency)
+control_immediate = true
+
+[transport.tcp]
+# Enable zero‑copy io_uring for TCP fallback
+io_uring_enabled = true
+# TCP port if data_bind_addr is not specified
+tcp_port = 19002
+
+[ebpf]
+# Enable access‑stride telemetry via eBPF
+enabled = true
+# Path to the compiled eBPF object file (optional, can be auto‑loaded)
+program_path = "/usr/lib/virthub/stride_tracer.bpf.o"
+# Telemetry report interval in milliseconds
+report_interval_ms = 100
+
+[tuning]
+# NUMA node to bind UFFD worker threads (-1 = automatic)
+numa_node = -1
+# Timeout for asynchronous operations (milliseconds)
+operation_timeout_ms = 500
+# Memory lock limit for RDMA registration (0 = unlimited)
+# Set to a reasonable limit in production, e.g., 17179869184 (16 GB)
+memlock_limit = 17179869184
+
+[vllm]
+# Force a specific connector version: "auto", "v1", or "v2"
+# "auto" uses V2 if available, falling back to V1.
+# Use "v1" to force the legacy GPUModelRunner V1 adapter.
+# Use "v2" to force the new GPUModelRunner V2 adapter (requires vLLM V1 engine).
+connector_version = "auto"
+
+[security]
+# Enable authentication for the control plane (Unix socket)
+enable_auth = false
+# Path to TLS certificates for the data plane (RDMA/TCP)
+# tls_cert_path = "/etc/virthub/certs/server.crt"
+# tls_key_path = "/etc/virthub/certs/server.key"
+# Allowed peer certificate fingerprints (empty = allow all)
+# allowed_peers = []
+
+[observability]
+# Prometheus metrics endpoint
+metrics_bind_addr = "0.0.0.0:9090"
+# Enable detailed latency histograms
+detailed_latency = false
+# Jaeger tracing endpoint (optional)
+# tracing_endpoint = "http://localhost:14268/api/traces"
+
+[validation]
+# Strict mode: fail on unknown configuration keys
+strict_mode = false
+# Validate hardware capabilities at startup
+validate_hardware = true
+# Required kernel features (comma‑separated)
+required_kernel_features = "userfaultfd, huge_pages, rdma_cm"
+# Minimum Linux kernel version
+min_kernel_version = "6.8.0"

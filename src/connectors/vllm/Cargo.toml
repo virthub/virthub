@@ -1,0 +1,28 @@
+# virthub/src/connectors/vllm/Cargo.toml
+
+[package]
+name = "virthub-connector-vllm"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Virthub memory tiering and disaggregation connector for vLLM framework"
+
+[dependencies]
+# Internal Workspace Dependencies
+klnk-core = { path = "../../klnk/klnk-core" }
+librmashim = { path = "../../klnk/librmashim" }
+virthub_config = { path = "../../config" }
+store = { path = "../../store" }
+
+# Data Serialization
+serde = { workspace = true }
+
+# Async Runtime & Synchronization
+tokio = { workspace = true, features = ["sync", "macros", "rt-multi-thread"] }
+
+# Error Handling
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

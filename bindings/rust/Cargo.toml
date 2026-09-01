@@ -1,0 +1,22 @@
+# bindings/rust/Cargo.toml
+
+[package]
+name = "virthub-native"
+version = "0.0.1"
+edition = "2021"
+description = "PyO3 bindings for the Virthub distributed memory mesh"
+
+[lib]
+name = "_virthub"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.21", features = ["extension-module", "abi3-py38"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+
+# Internal Virthub crates (exact package names)
+virthub-connector-vllm = { path = "../../src/connectors/vllm" }
+virthub-connector-lmcache = { path = "../../src/connectors/lmcache" }
+virthub-connector-sglang = { path = "../../src/connectors/sglang" }
+virthub_config = { path = "../../src/config" }
+store = { path = "../../src/store" }

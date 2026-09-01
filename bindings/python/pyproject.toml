@@ -1,0 +1,78 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "virthub-bindings"
+version = "0.0.1"
+description = "Python bindings for Virthub distributed memory mesh"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "Virthub Contributors" }
+]
+requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Distributed Computing",
+]
+
+# Core dependencies – keep minimal; the package works with in-memory stubs.
+dependencies = [
+    "numpy>=1.24",
+    "psutil>=5.9",
+    "tomli>=2.0; python_version<'3.11'",
+]
+
+# Optional dependency groups
+[project.optional-dependencies]
+vllm = [
+    "vllm>=0.6.0",
+]
+sglang = [
+    "sglang>=0.1.0",
+]
+lmcache = [
+    "lmcache>=0.1.0",
+]
+all = [
+    "virthub-bindings[vllm,sglang,lmcache]",
+]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio",
+    "pytest-mock",
+    "pytest-timeout",
+    "toml",
+    "tomli_w",
+]
+
+# Entry points for vLLM KV connector discovery
+[project.entry-points."vllm.kv_connector"]
+virthub = "virthub.vllm:VirthubKVConnector"
+virthub_v1 = "virthub.vllm:VirthubKVConnectorV1"
+virthub_v2 = "virthub.vllm:VirthubKVConnectorV2"
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.setuptools.package-data]
+virthub = ["py.typed"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "integration: integration test (may be slow)",
+    "slow: slow running test",
+    "gpu: requires GPU",
+    "performance: performance / benchmark test",
+]
+testpaths = ["tests"]

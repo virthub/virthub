@@ -1,0 +1,47 @@
+# virthub/src/klnk/klnk-daemon/Cargo.toml
+
+[package]
+name = "klnk-daemon"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Virthub background daemon managing memory tiering and disaggregation control plane"
+
+[dependencies]
+# Internal Workspace Dependencies
+klnk-core = { path = "../klnk-core" }
+klnk-net = { path = "../klnk-net" }
+klnk-ebpf = { path = "../klnk-ebpf" }
+klnk-uffd = { path = "../klnk-uffd" }
+librmashim = { path = "../librmashim" }
+store = { path = "../../store" }
+virthub_config = { path = "../../config" }
+
+# Async & Networking
+tokio = { workspace = true, features = ["sync", "net", "macros", "rt-multi-thread", "fs"] }
+tokio-util = { workspace = true, features = ["codec"] }
+futures = { workspace = true }
+
+# System & Kernel Interfaces
+libc = { workspace = true }
+nix = { workspace = true }
+userfaultfd = { workspace = true }
+
+# Concurrency
+dashmap = { workspace = true }
+
+# Serialization
+serde = { workspace = true, features = ["derive"] }
+bincode = { workspace = true }
+
+# Diagnostics & Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# Error Handling
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tempfile = "3.0"

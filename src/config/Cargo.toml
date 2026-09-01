@@ -1,0 +1,19 @@
+# virthub/src/config/Cargo.toml
+
+[package]
+name = "virthub_config"
+version = "0.1.0"
+edition = "2021"
+authors = ["Virthub Contributors"]
+description = "Configuration loading, TOML schema parsing, and defaults for Virthub DSM"
+license = "MIT"
+
+[dependencies]
+# Inherited from root workspace.dependencies
+serde = { workspace = true }
+thiserror = { workspace = true }
+toml = { workspace = true }
+
+[dev-dependencies]
+# Inherited from root workspace.dependencies
+tokio = { workspace = true, features = ["macros"] }

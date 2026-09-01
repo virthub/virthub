@@ -1,0 +1,28 @@
+# virthub/src/klnk/klnk-core/Cargo.toml
+
+[package]
+name = "klnk-core"
+version = "0.1.0"
+edition = "2021"
+authors = ["Virthub Contributors"]
+description = "Core domain abstractions and control-plane state management for Virthub DSM"
+license = "MIT"
+
+[dependencies]
+# Concurrency
+dashmap = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true, features = ["sync"] }
+
+# System interfaces
+libc = { workspace = true }
+
+# Serialization (for domain types)
+serde = { workspace = true, features = ["derive"] }
+
+# Error handling
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }

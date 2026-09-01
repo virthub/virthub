@@ -1,0 +1,35 @@
+# virthub/src/klnk/klnk-shim/Cargo.toml
+
+[package]
+name = "klnk-shim"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Interposition and interceptor shim library for Virthub DSM"
+
+[dependencies]
+# Internal workspace dependencies
+klnk-core = { path = "../klnk-core" }
+virthub_config = { path = "../../config" }
+
+# Concurrency & System Integration
+once_cell = { workspace = true }
+nix = { workspace = true, features = ["socket", "mman"] }
+libc = { workspace = true }
+
+# Serialization & Messaging
+serde = { workspace = true }
+serde_json = { workspace = true }
+bincode = "1.3"
+
+# Memory mapping
+memmap2 = "0.9"
+
+# Error Handling & Telemetry
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tempfile = "3.0"

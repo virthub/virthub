@@ -1,0 +1,27 @@
+# virthub/src/store/Cargo.toml
+
+[package]
+name = "store"
+version = "0.1.0"
+edition = "2021"
+authors = ["Virthub Contributors"]
+description = "Multi-tier storage manager and zero-copy staging frame pool for Virthub"
+license = "MIT"
+
+[dependencies]
+# Internal workspace dependencies
+virthub_config = { path = "../config" }
+
+# Storage, System & Utilities
+bincode = { workspace = true }
+crc32fast = { workspace = true }
+crossbeam-queue = { workspace = true }
+libc = { workspace = true }
+tokio = { workspace = true }
+dashmap = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = "0.1"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros"] }

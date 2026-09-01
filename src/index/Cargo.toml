@@ -1,0 +1,31 @@
+# virthub/src/index/Cargo.toml
+
+[package]
+name = "index"
+version = "0.1.0"
+edition = "2021"
+authors = ["Virthub Contributors"]
+description = "High-performance radix tree, hash indexes, and cache eviction algorithms for Virthub"
+license = "MIT"
+
+[dependencies]
+# Internal workspace dependencies
+store = { path = "../store" }
+virthub_config = { path = "../config" }
+
+# Concurrency & Data Structures
+dashmap = { workspace = true }
+ahash = { workspace = true }
+parking_lot = { workspace = true }
+
+# Async & Serialization
+tokio = { workspace = true, features = ["sync"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# System & Telemetry
+tracing = "0.1"
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros"] }

@@ -1,0 +1,36 @@
+# virthub/src/klnk/klnk-uffd/Cargo.toml
+
+[package]
+name = "klnk-uffd"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Userfaultfd page fault handling engine and zero-copy page movement for Virthub DSM"
+
+[dependencies]
+# Internal workspace dependencies
+klnk-core = { path = "../klnk-core" }
+store = { path = "../../store" }
+librmashim = { path = "../librmashim" }
+virthub_config = { path = "../../config" }
+
+# System, Affinity & Kernel Userfaultfd Interfaces
+userfaultfd = { workspace = true }
+core_affinity = { workspace = true }
+nix = { workspace = true, features = ["poll", "mman", "event"] }
+libc = { workspace = true }
+
+# Concurrency
+dashmap = { workspace = true }
+
+# Async & Serialization
+tokio = { workspace = true, features = ["sync", "rt-multi-thread", "time"] }
+serde = { workspace = true }
+
+# Error Handling & Telemetry
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros"] }

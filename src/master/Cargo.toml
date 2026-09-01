@@ -1,0 +1,20 @@
+# virthub/src/master/Cargo.toml
+
+[package]
+name = "master"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Central Master Coordinator node managing cluster membership and global metadata"
+
+[dependencies]
+# Async Runtime & Synchronization
+tokio = { workspace = true, features = ["sync", "macros", "rt-multi-thread", "time"] }
+
+# Error Handling & Telemetry
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
