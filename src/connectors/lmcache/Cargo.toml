@@ -14,15 +14,19 @@ klnk-core = { path = "../../klnk/klnk-core" }
 librmashim = { path = "../../klnk/librmashim" }
 virthub_config = { path = "../../config" }
 store = { path = "../../store" }
+precision = { path = "../../precision" }
 
 # Data Serialization
 serde = { workspace = true }
 
-# Bincode for serializing/deserializing KV blocks (used in error enum)
+# Bincode for serializing/deserializing KV blocks
 bincode = "1.3"
 
 # Async Runtime & Synchronization
 tokio = { workspace = true, features = ["sync", "macros", "rt-multi-thread"] }
+
+# Concurrency
+dashmap = { workspace = true }
 
 # Error Handling
 thiserror = { workspace = true }

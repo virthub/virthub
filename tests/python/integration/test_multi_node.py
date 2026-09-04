@@ -114,7 +114,6 @@ def virthub_cluster(project_root: Path) -> Generator[Dict[str, Any], None, None]
     """
     daemon = _find_daemon_binary(project_root)
 
-    # Use unique sockets and ports
     socket1 = f"/tmp/virthub_multi_node_1_{os.getpid()}.sock"
     socket2 = f"/tmp/virthub_multi_node_2_{os.getpid()}.sock"
     import socket
@@ -130,7 +129,6 @@ def virthub_cluster(project_root: Path) -> Generator[Dict[str, Any], None, None]
     cfg1 = _write_node_config("node-1", socket1, f"0.0.0.0:{port1}", port1, peers)
     cfg2 = _write_node_config("node-2", socket2, f"0.0.0.0:{port2}", port2, peers)
 
-    # Clean any leftover sockets
     for s in (socket1, socket2):
         if os.path.exists(s):
             os.unlink(s)
@@ -155,7 +153,6 @@ def virthub_cluster(project_root: Path) -> Generator[Dict[str, Any], None, None]
         bufsize=1,
     )
 
-    # Wait for both sockets to appear
     for proc, sock, name in [(proc1, socket1, "node-1"), (proc2, socket2, "node-2")]:
         start = time.time()
         while time.time() - start < 30:
@@ -178,7 +175,6 @@ def virthub_cluster(project_root: Path) -> Generator[Dict[str, Any], None, None]
         "node_ids": ("node-1", "node-2"),
     }
 
-    # Cleanup
     for proc in (proc1, proc2):
         proc.terminate()
         try:
@@ -206,7 +202,6 @@ class TestMultiNode:
         socket1, socket2 = virthub_cluster["sockets"]
         port1, port2 = virthub_cluster["ports"]
 
-        # Connector for node‑1
         config_node1 = {
             "control_socket": socket1,
             "data_bind_addr": f"0.0.0.0:{port1}",
@@ -214,7 +209,6 @@ class TestMultiNode:
         }
         connector1 = VirthubKVConnector(config_node1)
 
-        # Connector for node‑2
         config_node2 = {
             "control_socket": socket2,
             "data_bind_addr": f"0.0.0.0:{port2}",
@@ -245,7 +239,6 @@ class TestMultiNode:
         # 3. Verify that node‑2 now has the block in its block_map
         assert block_id in connector2.block_map, "Block should be loaded on node‑2"
 
-        # Cleanup
         connector1.close()
         connector2.close()
 

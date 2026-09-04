@@ -11,6 +11,7 @@ license = "MIT"
 [dependencies]
 # Internal workspace dependencies
 virthub_config = { path = "../config" }
+precision = { path = "../precision" }
 
 # Storage, System & Utilities
 bincode = { workspace = true }

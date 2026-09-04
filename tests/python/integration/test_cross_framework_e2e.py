@@ -218,7 +218,6 @@ class TestCrossFramework:
         key = KvBlockKey(1, 42)
         payload = b"cross-framework test data"
 
-        # put_chunk and get_chunk are async
         meta = await connector.put_chunk(
             key=key,
             tier=StorageTier.Dram,

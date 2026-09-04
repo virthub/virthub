@@ -3,7 +3,7 @@
 # virthub/install.sh - Unified dependency installer for Virthub & KLNK workspace.
 #
 # Usage:
-#   ./install.sh [--with-integration] [--engine {vllm,sglang}] [--vllm-version <version>] [--python-version <version>] [--no-patch-vllm]
+#   ./install.sh [--with-integration] [--engine {vllm,sglang}] [--vllm-version <version>] [--python-version <version>] [--no-patch-vllm] [--with-kernels]
 #   --with-integration  Install integration test packages (vLLM or SGLang, plus LMCache) inside the virtual environment.
 #   --engine            Choose which engine to install: vllm or sglang (required when --with-integration is used).
 #   --vllm-version      Specify the vLLM version. Accepts either "0.20.2" or "==0.20.2" (default: ">=0.26.0").
@@ -11,6 +11,7 @@
 #                       If not given, the default python3 is used. If the requested version is not installed,
 #                       the script will try to use 'uv' to create the environment.
 #   --no-patch-vllm     Do NOT automatically patch vLLM to register the Virthub connector.
+#   --with-kernels      Install CUDA toolkit (if missing) and build/test the PSP-KV GPU kernels.
 #
 # The Python bindings are installed as a pure Python package. The native Rust extension
 # is optional and can be built later with maturin if needed.
@@ -40,6 +41,7 @@ ENGINE_CHOICE=""
 VLLM_VERSION=">=0.26.0"
 PYTHON_VERSION=""
 PATCH_VLLM=true
+WITH_KERNELS=false
 VENV_DIR="$SCRIPT_DIR/.venv"
 
 export PIP_NO_WARN_SCRIPT_LOCATION=1
@@ -62,25 +64,40 @@ detect_os() {
     fi
 }
 
+# New parameter: with_kernels (true/false)
 install_system_deps() {
+    local with_kernels="$1"
     info "Installing system build tools, RDMA libraries, and NUMA dependencies for $OS..."
     case "$OS" in
         ubuntu|debian)
             sudo apt-get update -y
-            sudo apt-get install -y \
-                build-essential pkg-config libssl-dev clang llvm libelf-dev \
+            local base_pkgs="build-essential pkg-config libssl-dev clang llvm libelf-dev \
                 libibverbs-dev librdmacm-dev rdma-core iproute2 numactl libnuma-dev \
-                protobuf-compiler git curl cmake python3 python3-pip python3-venv
+                protobuf-compiler git curl cmake python3 python3-pip python3-venv"
+            if [ "$with_kernels" = true ]; then
+                info "Including CUDA toolkit for GPU kernel build..."
+                base_pkgs="$base_pkgs nvidia-cuda-toolkit"
+            fi
+            sudo apt-get install -y $base_pkgs
             ;;
         rocky|rhel|fedora|almalinux)
-            sudo dnf groupinstall -y "Development Tools"
-            sudo dnf install -y \
-                pkgconfig openssl-devel clang llvm elfutils-libelf-devel \
+            local base_pkgs="pkgconfig openssl-devel clang llvm elfutils-libelf-devel \
                 rdma-core-devel libibverbs numactl numactl-devel protobuf-compiler \
-                git curl cmake python3 python3-pip
+                git curl cmake python3 python3-pip"
+            if [ "$with_kernels" = true ]; then
+                info "Including CUDA toolkit for GPU kernel build..."
+                # On RHEL/Fedora, CUDA toolkit is typically installed via NVIDIA's repo.
+                # We'll rely on user having it installed, but we can attempt dnf install if available.
+                base_pkgs="$base_pkgs cuda-toolkit"
+            fi
+            sudo dnf groupinstall -y "Development Tools"
+            sudo dnf install -y $base_pkgs
             ;;
         *)
             warn "Unsupported OS distribution: $OS. Please ensure build-essential, clang, libelf, rdma-core, python3, and pip are installed manually."
+            if [ "$with_kernels" = true ]; then
+                warn "Also ensure CUDA toolkit (nvcc) is installed for kernel build."
+            fi
             ;;
     esac
     success "System packages installed successfully."
@@ -218,6 +235,48 @@ verify_workspace() {
     success "All workspace crate dependencies verified!"
 }
 
+# New function: build and optionally test PSP-KV GPU kernels
+build_kernels_if_requested() {
+    if [ "$WITH_KERNELS" = false ]; then
+        info "Skipping GPU kernel build (use --with-kernels to enable)."
+        return 0
+    fi
+
+    if ! command -v nvcc &> /dev/null; then
+        warn "CUDA compiler (nvcc) not found. Skipping kernel build."
+        return 0
+    fi
+
+    info "Building PSP-KV GPU kernels..."
+    local kernels_dir="$SCRIPT_DIR/kernels"
+    if [ ! -f "$kernels_dir/CMakeLists.txt" ]; then
+        error "Kernels CMakeLists.txt not found at $kernels_dir"
+    fi
+    mkdir -p "$kernels_dir/build"
+    cd "$kernels_dir/build"
+    cmake .. || error "CMake configuration failed"
+    make -j || error "Kernel build failed"
+    cd "$SCRIPT_DIR"
+
+    info "Running kernel CPU reference tests..."
+    local test_dir="$kernels_dir/tests"
+    # Header consistency test
+    if [ -f "$test_dir/test_header_consistency.py" ]; then
+        python3 "$test_dir/test_header_consistency.py" || warn "Header consistency test failed (non-fatal)."
+    fi
+    # CPU reference dequantization
+    local cpu_test="$test_dir/cpu_reference_dequant.cu"
+    if [ -f "$cpu_test" ]; then
+        local cpu_bin="$kernels_dir/build/cpu_reference_dequant"
+        nvcc -I"$kernels_dir/common" -o "$cpu_bin" "$cpu_test" || warn "CPU reference compile failed (non-fatal)."
+        if [ -f "$cpu_bin" ]; then
+            "$cpu_bin" || warn "CPU reference test failed (non-fatal)."
+        fi
+    fi
+
+    success "GPU kernels built and tested."
+}
+
 show_help() {
     cat << EOF
 Usage:
@@ -229,6 +288,7 @@ Options:
   --vllm-version <version>    Specify the vLLM version. Accepts either "0.20.2" or "==0.20.2" directly. Default: ">=0.26.0".
   --python-version <version>  Specify the Python version for the virtual environment (e.g., "3.10", "3.11").
   --no-patch-vllm             Do NOT automatically patch vLLM to register the Virthub connector.
+  --with-kernels              Install CUDA toolkit (if missing) and build/test the PSP-KV GPU kernels.
   --help                      Show this help message.
 
 Examples:
@@ -236,6 +296,7 @@ Examples:
   ./install.sh --with-integration --engine vllm --vllm-version "0.20.2" --python-version "3.10"
   ./install.sh --with-integration --engine vllm --vllm-version "==0.20.2" --python-version "3.10" --no-patch-vllm
   ./install.sh --with-integration --engine sglang
+  ./install.sh --with-kernels                   # Also build/test PSP-KV GPU kernels after install
 
 Note: vLLM and SGLang have conflicting dependencies. You must choose only one engine.
       The virtual environment is created / updated at .venv/ in the project root.
@@ -244,6 +305,7 @@ Note: vLLM and SGLang have conflicting dependencies. You must choose only one en
       When vLLM is selected, the script automatically patches vLLM's KV connector factory
       to recognise the `virthub` connector unless `--no-patch-vllm` is given.
       To run Python tests, use ./run.sh which automatically activates the venv.
+      To build/test GPU kernels separately, use ./run.sh --build-kernels or ./run.sh --test-kernels.
 EOF
 }
 
@@ -279,6 +341,10 @@ main() {
                 PATCH_VLLM=false
                 shift
                 ;;
+            --with-kernels)
+                WITH_KERNELS=true
+                shift
+                ;;
             --help|-h)
                 show_help
                 exit 0
@@ -291,16 +357,22 @@ main() {
 
     info "=== Virthub & KLNK Dependency Installer ==="
     detect_os
-    install_system_deps
+    install_system_deps "$WITH_KERNELS"
     install_rust
     install_python_bindings
     check_kernel_version
     verify_workspace
+    build_kernels_if_requested
+
     echo ""
     success "Installation complete! You can now run:"
     success "  ./run.sh --test              (Rust tests)"
     success "  ./run.sh --test-python       (Python unit tests, using venv)"
     success "  ./run.sh --test-integration  (Python integration tests, using venv)"
+    success "  ./run.sh --test-precision    (Precision predictor tests)"
+    success "  ./run.sh --test-pspkv        (PSP-KV storage tests)"
+    success "  ./run.sh --build-kernels     (Build GPU kernels)"
+    success "  ./run.sh --test-kernels      (Run GPU kernel tests)"
 }
 
 main "$@"

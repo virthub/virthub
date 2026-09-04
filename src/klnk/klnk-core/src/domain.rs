@@ -3,15 +3,10 @@
 //! Core domain types for the KLNK distributed shared memory system.
 //!
 //! This module defines the fundamental data structures used across the system:
-//! node identification, memory region descriptors, coherence states, and
-//! remote endpoint information (including RDMA metadata regions).
-//!
-//! ## Variable‑Sized Coherence Domains
-//!
-//! The `DistributedPageEntry` struct uses a `page_size` field that can be
-//! any value (not just 2 MB).  This allows the control plane to manage
-//! coherence at arbitrary granularities, from 4 KB sub‑pages up to large
-//! contiguous blocks, eliminating false sharing in KV‑cache workloads.
+//! node identification, memory region descriptors, coherence states,
+//! distributed page entries (including opaque metadata), and remote endpoint
+//! information. All types are generic and do not depend on KV‑cache specifics,
+//! preserving the decoupling boundary.
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -43,7 +38,7 @@ impl fmt::Display for GlobalRegionId {
     }
 }
 
-/// Memory protection flags mirror Linux `sys/mman.h` values (`PROT_READ`, `PROT_WRITE`, etc.).
+/// Memory protection flags mirroring Linux `sys/mman.h` values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MemoryProtectionFlags(pub u32);
 
@@ -75,7 +70,7 @@ impl std::ops::BitOr for MemoryProtectionFlags {
 pub enum PageCoherenceState {
     /// Unit is unmapped and absent locally (triggers UFFD missing page fault).
     Invalid,
-    /// Shared Read-Only copy present locally (triggers write-protection trap on edit).
+    /// Shared Read-Only copy present locally.
     SharedRead,
     /// Exclusive Read-Write ownership held locally.
     ExclusiveWrite,
@@ -91,9 +86,7 @@ pub struct MemoryRegionDescriptor {
     pub region_size: usize,
     pub staging_vaddr: u64,
     pub staging_num_pages: usize,
-    /// The size of each coherence unit within the region.  This can be any
-    /// value (e.g., 4096, 2 MB, or a custom block size) and determines the
-    /// granularity of page state tracking and invalidation.
+    /// The size of each coherence unit within the region.
     pub staging_page_size: usize,
     pub prot_flags: MemoryProtectionFlags,
     pub mem_flags: u32,
@@ -105,7 +98,8 @@ pub struct MemoryRegionDescriptor {
 impl MemoryRegionDescriptor {
     /// Validates if a virtual address range falls completely within this region's boundary.
     pub fn contains_range(&self, vaddr: u64, len: usize) -> bool {
-        vaddr >= self.main_vaddr && (vaddr + len as u64) <= (self.main_vaddr + self.region_size as u64)
+        vaddr >= self.main_vaddr
+            && (vaddr + len as u64) <= (self.main_vaddr + self.region_size as u64)
     }
 
     /// Computes offset relative to the base virtual address.
@@ -118,6 +112,59 @@ impl MemoryRegionDescriptor {
     }
 }
 
+/// Metadata tracking distributed page state across cluster nodes.
+///
+/// This struct is generic with respect to the upper‑layer payload policy.
+/// The `metadata` field is an opaque byte vector that the DSM layer stores
+/// and replicates without interpretation. KV‑cache managers can serialize
+/// their precision policy or sidecar descriptor into this field.
+#[derive(Debug, Clone)]
+pub struct DistributedPageEntry {
+    pub page_vaddr: u64,
+    pub page_size: usize,
+    pub coherence_state: PageCoherenceState,
+    pub primary_owner: NodeId,
+    /// List of nodes that hold a SharedRead copy of this page.
+    pub replica_holders: Vec<NodeId>,
+    /// Version number incremented on every exclusive write.
+    pub version: u64,
+    /// Opaque metadata owned by the upper layer; DSM does not inspect.
+    pub metadata: Vec<u8>,
+}
+
+impl DistributedPageEntry {
+    /// Creates a new entry with version 0, empty reader list, and empty metadata.
+    pub fn new(page_vaddr: u64, page_size: usize, owner: NodeId) -> Self {
+        Self {
+            page_vaddr,
+            page_size,
+            coherence_state: PageCoherenceState::Invalid,
+            primary_owner: owner,
+            replica_holders: Vec::new(),
+            version: 0,
+            metadata: Vec::new(),
+        }
+    }
+
+    /// Creates a new entry with the given metadata.
+    pub fn new_with_metadata(
+        page_vaddr: u64,
+        page_size: usize,
+        owner: NodeId,
+        metadata: Vec<u8>,
+    ) -> Self {
+        Self {
+            page_vaddr,
+            page_size,
+            coherence_state: PageCoherenceState::Invalid,
+            primary_owner: owner,
+            replica_holders: Vec::new(),
+            version: 0,
+            metadata,
+        }
+    }
+}
+
 /// Metadata describing a remote node's RDMA endpoint and its exported metadata region
 /// plus a dedicated invalidation buffer.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -125,15 +172,14 @@ pub struct RemoteEndpointInfo {
     pub node_id: NodeId,
     pub socket_addr: SocketAddr,
 
-    /// RDMA information for the node's exported metadata region (page states snapshot).
+    /// RDMA information for the node's exported metadata region.
     pub metadata_vaddr: u64,
     pub metadata_rkey: u32,
     pub metadata_len: usize,
-    /// Current version of the metadata snapshot (to detect changes).
+    /// Current version of the metadata snapshot.
     pub metadata_version: u64,
 
     /// RDMA information for the node's invalidation ring buffer.
-    /// Writers will send invalidation messages (page address + new version) here.
     pub invalidation_vaddr: u64,
     pub invalidation_rkey: u32,
     pub invalidation_len: usize,
@@ -146,7 +192,6 @@ pub struct RemoteEndpointInfo {
 
 impl RemoteEndpointInfo {
     /// Create a new endpoint info with the given node and address.
-    /// The metadata and invalidation regions must be registered and provided later.
     pub fn new(node_id: NodeId, socket_addr: SocketAddr) -> Self {
         Self {
             node_id,
@@ -207,11 +252,8 @@ mod tests {
             version: 0,
         };
 
-        // Valid inside range.
         assert!(descriptor.contains_range(0x7fff_0000_0000, 2 * 1024 * 1024));
         assert_eq!(descriptor.offset_of(0x7fff_0010_0000), Some(0x10_0000));
-
-        // Out of range.
         assert!(!descriptor.contains_range(0x7fff_0000_0000, 5 * 1024 * 1024));
         assert_eq!(descriptor.offset_of(0x7fff_0500_0000), None);
     }
@@ -235,5 +277,17 @@ mod tests {
         assert_eq!(info.invalidation_vaddr, 0x7fff_3000_0000);
         assert_eq!(info.invalidation_rkey, 5678);
         assert_eq!(info.invalidation_len, 1024);
+    }
+
+    #[test]
+    fn test_distributed_page_entry_with_metadata() {
+        let owner = NodeId(1);
+        let mut entry = DistributedPageEntry::new(0x1000, 4096, owner);
+        assert_eq!(entry.metadata.len(), 0);
+        entry.metadata = vec![1, 2, 3, 4];
+        assert_eq!(entry.metadata, vec![1, 2, 3, 4]);
+
+        let entry2 = DistributedPageEntry::new_with_metadata(0x2000, 4096, owner, vec![9, 9]);
+        assert_eq!(entry2.metadata, vec![9, 9]);
     }
 }

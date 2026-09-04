@@ -1,5 +1,11 @@
 // virthub/src/config/src/lib.rs
 
+//! Configuration loading, TOML schema parsing, and defaults for Virthub DSM.
+//!
+//! This crate defines the `VirthubConfig` struct and all sub‑configs that map
+//! to the `virthub.toml` / `cluster.toml` files. It also includes the
+//! [`PrecisionConfig`] section used by the allocation‑time precision predictor.
+
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use thiserror::Error;
@@ -19,6 +25,7 @@ pub enum ConfigError {
     },
 }
 
+/// Root configuration for Virthub.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct VirthubConfig {
     pub general: GeneralConfig,
@@ -28,8 +35,12 @@ pub struct VirthubConfig {
     pub transport: TransportConfig,
     pub ebpf: EbpfConfig,
     pub tuning: TuningConfig,
+    /// Precision prediction and PSP‑KV format configuration.
+    #[serde(default)]
+    pub precision: PrecisionConfig,
 }
 
+/// General settings.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct GeneralConfig {
     pub log_level: String,
@@ -38,6 +49,7 @@ pub struct GeneralConfig {
     pub node_id: String,
 }
 
+/// KLNK engine configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct KlnkConfig {
     pub enable_uffd_move: bool,
@@ -46,6 +58,7 @@ pub struct KlnkConfig {
     pub huge_page_size: usize,
 }
 
+/// Storage tier configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct StoreConfig {
     pub tier: TierConfig,
@@ -61,6 +74,7 @@ pub struct TierConfig {
     pub l2_path: String,
 }
 
+/// Master & indexer configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MasterConfig {
     pub raft: RaftConfig,
@@ -88,6 +102,7 @@ pub struct ShardingConfig {
     pub shard_count: usize,
 }
 
+/// Transport layer configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TransportConfig {
     pub default_protocol: String,
@@ -109,6 +124,7 @@ pub struct TcpConfig {
     pub tcp_port: u16,
 }
 
+/// eBPF telemetry configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct EbpfConfig {
     pub enabled: bool,
@@ -116,11 +132,53 @@ pub struct EbpfConfig {
     pub report_interval_ms: u64,
 }
 
+/// Performance tuning configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TuningConfig {
     pub numa_node: i32,
     pub operation_timeout_ms: u64,
     pub memlock_limit: usize,
+}
+
+/// Precision prediction and PSP‑KV format configuration.
+///
+/// These settings control the allocation‑time predictor and the static
+/// physical format generation. The format is fixed for the entire serving
+/// run; it is **not** selected dynamically per block.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PrecisionConfig {
+    /// Physical storage format generation:
+    /// 0 = Basic, 1 = Enhanced GPU‑Native, 2 = BT‑KV.
+    pub format_generation: u8,
+    /// Number of initial tokens that are always lossless (attention sink).
+    pub sink_window: usize,
+    /// Number of trailing tokens that are always lossless (local context).
+    pub local_window: usize,
+    /// Number of first/last layers considered critical.
+    pub critical_layer_count: usize,
+    /// Elevated memory pressure threshold (0.0‑1.0).
+    pub elevated_pressure_threshold: f64,
+    /// Nominal memory pressure threshold (0.0‑1.0).
+    pub nominal_pressure_threshold: f64,
+    /// Critical memory pressure threshold (0.0‑1.0).
+    pub critical_pressure_threshold: f64,
+    /// Critical pressure relaxation threshold (0.0‑1.0).
+    pub critical_relax_threshold: f64,
+}
+
+impl Default for PrecisionConfig {
+    fn default() -> Self {
+        Self {
+            format_generation: 1, // Enhanced GPU‑Native by default
+            sink_window: 16,
+            local_window: 64,
+            critical_layer_count: 2,
+            elevated_pressure_threshold: 0.78,
+            nominal_pressure_threshold: 0.70,
+            critical_pressure_threshold: 0.88,
+            critical_relax_threshold: 0.82,
+        }
+    }
 }
 
 impl VirthubConfig {
@@ -143,11 +201,14 @@ impl VirthubConfig {
         Ok(config)
     }
 
+    /// Loads configuration using the path in `VIRTHUB_CONFIG`, or a default path.
     pub fn load_default() -> Result<Self, ConfigError> {
-        let path = std::env::var("VIRTHUB_CONFIG").unwrap_or_else(|_| "conf/virthub.toml".to_string());
+        let path = std::env::var("VIRTHUB_CONFIG")
+            .unwrap_or_else(|_| "conf/virthub.toml".to_string());
         Self::load_from_file(path)
     }
 
+    /// Parses the numeric node ID from the `node_id` string.
     pub fn parsed_node_id(&self) -> u64 {
         self.general
             .node_id
@@ -185,7 +246,11 @@ impl Default for VirthubConfig {
             master: MasterConfig {
                 raft: RaftConfig {
                     embedded: true,
-                    initial_peers: vec!["node-1".to_string(), "node-2".to_string(), "node-3".to_string()],
+                    initial_peers: vec![
+                        "node-1".to_string(),
+                        "node-2".to_string(),
+                        "node-3".to_string(),
+                    ],
                     etcd_endpoints: vec!["http://127.0.0.1:2379".to_string()],
                 },
                 scheduler: SchedulerConfig {
@@ -219,6 +284,7 @@ impl Default for VirthubConfig {
                 operation_timeout_ms: 500,
                 memlock_limit: 0,
             },
+            precision: PrecisionConfig::default(),
         }
     }
 }
@@ -239,5 +305,37 @@ mod tests {
 
         config.general.node_id = "invalid".to_string();
         assert_eq!(config.parsed_node_id(), 1);
+    }
+
+    #[test]
+    fn test_precision_defaults() {
+        let config = VirthubConfig::default();
+        assert_eq!(config.precision.format_generation, 1);
+        assert_eq!(config.precision.sink_window, 16);
+        assert_eq!(config.precision.local_window, 64);
+        assert_eq!(config.precision.critical_layer_count, 2);
+    }
+
+    #[test]
+    fn test_precision_deserialization() {
+        let toml_str = r#"
+            format_generation = 2
+            sink_window = 16
+            local_window = 64
+            critical_layer_count = 2
+            elevated_pressure_threshold = 0.78
+            nominal_pressure_threshold = 0.70
+            critical_pressure_threshold = 0.88
+            critical_relax_threshold = 0.82
+        "#;
+        let precision: PrecisionConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(precision.format_generation, 2);
+        assert_eq!(precision.sink_window, 16);
+        assert_eq!(precision.local_window, 64);
+        assert_eq!(precision.critical_layer_count, 2);
+        assert_eq!(precision.elevated_pressure_threshold, 0.78);
+        assert_eq!(precision.nominal_pressure_threshold, 0.70);
+        assert_eq!(precision.critical_pressure_threshold, 0.88);
+        assert_eq!(precision.critical_relax_threshold, 0.82);
     }
 }

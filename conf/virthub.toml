@@ -1,4 +1,4 @@
-# conf/virthub.toml
+# virthub/conf/virthub.toml
 
 [general]
 # Log level: trace, debug, info, warn, error
@@ -28,9 +28,9 @@ l0_enabled = false
 l0_device_ids = [0, 1]          # GPU device IDs if enabled
 # L1: Host DRAM (enabled by default)
 l1_enabled = true
-# Maximum L1 capacity in blocks (0 = unlimited)
+# Maximum L1 capacity in blocks (0 = unlimited) - NOTE: currently ignored by parser
 l1_max_blocks = 8192
-# High / low watermarks for proactive eviction
+# High / low watermarks for proactive eviction - ignored by parser
 l1_high_watermark = 0.85
 l1_low_watermark = 0.70
 # L2: NVMe SSD
@@ -111,6 +111,29 @@ memlock_limit = 17179869184
 # Use "v1" to force the legacy GPUModelRunner V1 adapter.
 # Use "v2" to force the new GPUModelRunner V2 adapter (requires vLLM V1 engine).
 connector_version = "auto"
+
+# Precision prediction and PSP-KV format configuration
+[precision]
+# Physical storage format generation:
+#   0 = Basic Format (legacy fallback)
+#   1 = Enhanced GPU-Native Format (Ampere/Ada/Hopper)
+#   2 = Hardware-Native 2D Block-Tiled Format (BT-KV, Hopper/Blackwell)
+format_generation = 1
+
+# Number of initial tokens always kept lossless (attention sink)
+sink_window = 16
+
+# Number of trailing tokens always kept lossless (local context)
+local_window = 64
+
+# Number of first/last layers considered critical
+critical_layer_count = 2
+
+# Memory pressure thresholds (0.0–1.0) for hysteresis
+elevated_pressure_threshold = 0.78
+nominal_pressure_threshold = 0.70
+critical_pressure_threshold = 0.88
+critical_relax_threshold = 0.82
 
 [security]
 # Enable authentication for the control plane (Unix socket)

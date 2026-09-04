@@ -27,9 +27,7 @@ class TestVirthubSglangConnector:
     def test_initialization(self, mock_config):
         connector = VirthubSglangConnector(mock_config)
         assert connector.config == mock_config
-        # With the stub, client is an _InMemoryClient, not None
         assert connector.client is not None
-        # block_map starts empty
         assert connector.block_map == {}
 
     def test_register_prefix_node(self, mock_config):
@@ -52,7 +50,6 @@ class TestVirthubSglangConnector:
 
     def test_fetch_remote_prefix(self, mock_config):
         connector = VirthubSglangConnector(mock_config)
-        # The stub fetch_remote_prefix is a no‑op, so just verify no error
         connector.fetch_remote_prefix(
             peer_addr="192.168.1.20:19001",
             remote_vaddr=0x7FFF_5000_0000,
@@ -63,10 +60,9 @@ class TestVirthubSglangConnector:
 
     def test_error_handling(self, mock_config):
         connector = VirthubSglangConnector(mock_config)
-        # The stub never raises, but we can test with a mock client
         mock_client = MagicMock()
         mock_client.register_prefix_node.side_effect = RuntimeError("fail")
-        connector.client = mock_client
+        connector._client = mock_client
 
         with pytest.raises(RuntimeError):
             connector.register_prefix_node(

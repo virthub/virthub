@@ -1,4 +1,4 @@
-# conf/cluster.toml
+# virthub/conf/cluster.toml
 
 [general]
 log_level = "info"
@@ -54,8 +54,8 @@ device_name = ""                     # auto‑selects the first available RDMA d
 enable_gdr = true                    # GPUDirect RDMA enabled
 rq_prepost_count = 2048
 control_immediate = true
-selective_signaling = true
-signal_batch_size = 16
+selective_signaling = true           # Ignored by current parser (strict_mode=false)
+signal_batch_size = 16               # Ignored
 
 [transport.tcp]
 io_uring_enabled = true
@@ -73,6 +73,29 @@ memlock_limit = 17179869184          # 16 GB – adjust to match your staging po
 
 [vllm]
 connector_version = "auto"           # "auto" selects V2 if available, else V1
+
+# Precision prediction and PSP-KV format configuration
+[precision]
+# Physical storage format generation:
+#   0 = Basic Format (legacy fallback)
+#   1 = Enhanced GPU-Native Format (Ampere/Ada/Hopper)
+#   2 = Hardware-Native 2D Block-Tiled Format (BT-KV, Hopper/Blackwell)
+format_generation = 2                # BT-KV for Hopper/Blackwell cluster
+
+# Number of initial tokens always kept lossless (attention sink)
+sink_window = 16
+
+# Number of trailing tokens always kept lossless (local context)
+local_window = 64
+
+# Number of first/last layers considered critical
+critical_layer_count = 2
+
+# Memory pressure thresholds (0.0–1.0) for hysteresis
+elevated_pressure_threshold = 0.78
+nominal_pressure_threshold = 0.70
+critical_pressure_threshold = 0.88
+critical_relax_threshold = 0.82
 
 [security]
 enable_auth = false

@@ -5,14 +5,18 @@
 # Usage:
 #   ./run.sh --test                    Run Rust unit & integration tests
 #   ./run.sh --test <crate>            Run tests for a specific Rust crate
+#   ./run.sh --test-precision          Run precision predictor tests
+#   ./run.sh --test-pspkv              Run PSP-KV storage tests
+#   ./run.sh --test-kernels            Build and run PSP-KV GPU kernel tests
 #   ./run.sh --test-python             Run Python unit tests (skip integration)
 #   ./run.sh --test-integration        Run Python integration tests
 #   ./run.sh --test-all                Run both Rust and Python tests
-#   ./run.sh --test-stress             Run concurrent stress tests
-#   ./run.sh --test-chaos              Run chaos engineering tests
-#   ./run.sh --bench                   Run performance benchmarks
+#   ./run.sh --bench-predictor         Run precision predictor benchmarks
+#   ./run.sh --bench-all               Run all Rust benchmarks
+#   ./run.sh --bench                   Run performance benchmarks (cargo bench)
 #   ./run.sh --bench-compare           Compare benchmarks against baseline
 #   ./run.sh --benchmark-vllm          Run vLLM performance benchmark (baseline vs Virthub)
+#   ./run.sh --build-kernels           Build PSP-KV GPU kernels (CMake)
 #   ./run.sh --daemon                  Launch klnk-daemon in foreground
 #   ./run.sh --daemon-start            Start daemon in background
 #   ./run.sh --daemon-stop             Stop background daemon
@@ -60,6 +64,24 @@ warn()    { echo -e "${YELLOW}[WARN]${NC}    $(date '+%H:%M:%S') $*"; }
 error()   { echo -e "${RED}[ERROR]${NC}   $(date '+%H:%M:%S') $*"; exit 1; }
 header()  { echo -e "\n${MAGENTA}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"; }
 
+# Ensure cargo is available; try to source Rust environment if needed.
+ensure_cargo() {
+    if command -v cargo &> /dev/null; then
+        return 0
+    fi
+
+    # Attempt to source the Rust cargo env if it exists
+    local cargo_env="$HOME/.cargo/env"
+    if [ -f "$cargo_env" ]; then
+        source "$cargo_env" 2>/dev/null || true
+        if command -v cargo &> /dev/null; then
+            return 0
+        fi
+    fi
+
+    error "cargo not found. Please install Rust via https://rustup.rs and ensure ~/.cargo/bin is in your PATH."
+}
+
 check_prerequisites() {
     local mode="${1:-full}"
     header
@@ -68,7 +90,12 @@ check_prerequisites() {
     if command -v cargo &> /dev/null; then
         success "Rust $(rustc --version | awk '{print $2}') found"
     else
-        error "Rust not found. Install from https://rustup.rs"
+        ensure_cargo > /dev/null 2>&1 || true
+        if command -v cargo &> /dev/null; then
+            success "Rust $(rustc --version | awk '{print $2}') found (after sourcing env)"
+        else
+            error "Rust not found. Install from https://rustup.rs"
+        fi
     fi
 
     if command -v python3 &> /dev/null; then
@@ -147,6 +174,7 @@ has_gpu() {
 }
 
 launch_daemon() {
+    ensure_cargo
     setup_env
     info "Building klnk-daemon..."
     cargo build -p klnk-daemon --release
@@ -156,6 +184,7 @@ launch_daemon() {
 }
 
 start_daemon_background() {
+    ensure_cargo
     info "Starting klnk-daemon in background..."
     stop_daemon 2>/dev/null || true
     cargo build -p klnk-daemon --release
@@ -214,6 +243,7 @@ daemon_status() {
 view_daemon_logs() { [ -f "$DAEMON_LOG_FILE" ] && tail -f "$DAEMON_LOG_FILE" || error "No daemon log file found"; }
 
 launch_cluster() {
+    ensure_cargo
     header
     info "Starting local 3‑node Virthub cluster..."
     setup_env
@@ -299,6 +329,16 @@ report_interval_ms = 100
 numa_node = -1
 operation_timeout_ms = 500
 memlock_limit = 0
+
+[precision]
+format_generation = 1
+sink_window = 16
+local_window = 64
+critical_layer_count = 2
+elevated_pressure_threshold = 0.78
+nominal_pressure_threshold = 0.70
+critical_pressure_threshold = 0.88
+critical_relax_threshold = 0.82
 EOF
         fi
 
@@ -329,6 +369,7 @@ stop_all_daemons() {
 }
 
 build_workspace() {
+    ensure_cargo
     header
     info "Building workspace (debug)..."
     cargo build --workspace
@@ -336,6 +377,7 @@ build_workspace() {
 }
 
 build_release() {
+    ensure_cargo
     header
     info "Building workspace (release)..."
     cargo build --workspace --release
@@ -343,6 +385,7 @@ build_release() {
 }
 
 build_ext() {
+    ensure_cargo
     header
     info "Building native Python extension (_virthub)..."
     activate_venv
@@ -351,13 +394,62 @@ build_ext() {
 }
 
 build_docker() {
+    ensure_cargo
     header
     info "Building Docker image..."
     docker build -t virthub:latest --build-arg RUST_VERSION=stable -f Dockerfile .
     success "Docker image built: virthub:latest"
 }
 
+build_kernels() {
+    header
+    if ! command -v nvcc &> /dev/null; then
+        error "CUDA compiler (nvcc) not found. Install CUDA toolkit or set CUDACXX."
+    fi
+    info "Building PSP-KV GPU kernels..."
+    local kernels_dir="$SCRIPT_DIR/kernels"
+    if [ ! -f "$kernels_dir/CMakeLists.txt" ]; then
+        error "Kernels CMakeLists.txt not found at $kernels_dir"
+    fi
+    mkdir -p "$kernels_dir/build"
+    cd "$kernels_dir/build"
+    cmake .. || error "CMake configuration failed"
+    make -j || error "Kernel build failed"
+    cd "$SCRIPT_DIR"
+    success "PSP-KV kernels built successfully."
+}
+
+test_kernels() {
+    header
+    info "Testing PSP-KV GPU kernels..."
+    build_kernels
+
+    local kernels_dir="$SCRIPT_DIR/kernels"
+    local test_dir="$kernels_dir/tests"
+
+    if [ -f "$test_dir/test_header_consistency.py" ]; then
+        info "Running header consistency test..."
+        python3 "$test_dir/test_header_consistency.py" || error "Header consistency test failed"
+    else
+        warn "Header consistency test not found; skipping."
+    fi
+
+    local cpu_test="$test_dir/cpu_reference_dequant.cu"
+    if [ -f "$cpu_test" ]; then
+        info "Compiling CPU reference dequantization test..."
+        local cpu_bin="$kernels_dir/build/cpu_reference_dequant"
+        nvcc -I"$kernels_dir/common" -o "$cpu_bin" "$cpu_test" || error "CPU reference compile failed"
+        info "Running CPU reference dequantization test..."
+        "$cpu_bin" || error "CPU reference test failed"
+    else
+        warn "CPU reference test not found; skipping."
+    fi
+
+    success "Kernel tests completed."
+}
+
 run_tests() {
+    ensure_cargo
     local target_crate="${1:-}"
     header
     if [ -z "$target_crate" ]; then
@@ -369,6 +461,22 @@ run_tests() {
         cargo test -p "$target_crate" --all-targets -- --nocapture
         success "Tests for $target_crate passed!"
     fi
+}
+
+run_precision_tests() {
+    ensure_cargo
+    header
+    info "Running precision predictor tests..."
+    cargo test -p precision --all-targets -- --nocapture
+    success "Precision tests passed!"
+}
+
+run_pspkv_tests() {
+    ensure_cargo
+    header
+    info "Running PSP‑KV storage tests..."
+    cargo test -p store --test psp_kv_tests --test quantization_tests -- --nocapture
+    success "PSP-KV tests passed!"
 }
 
 run_python_tests() {
@@ -405,11 +513,31 @@ run_python_integration() {
 }
 
 run_all_tests() {
+    ensure_cargo
     run_tests
+    run_precision_tests
+    run_pspkv_tests
     run_python_tests
 }
 
+run_predictor_bench() {
+    ensure_cargo
+    header
+    info "Running precision predictor benchmarks..."
+    cargo bench -p precision
+    success "Predictor benchmarks completed"
+}
+
+run_all_benches() {
+    ensure_cargo
+    header
+    info "Running all Rust benchmarks..."
+    cargo bench --workspace
+    success "All benchmarks completed"
+}
+
 run_benchmarks() {
+    ensure_cargo
     header
     info "Running performance benchmarks..."
     cargo bench --workspace -- --output-format bencher
@@ -417,6 +545,7 @@ run_benchmarks() {
 }
 
 compare_benchmarks() {
+    ensure_cargo
     header
     info "Comparing benchmarks against baseline..."
     cargo bench --workspace -- --baseline main
@@ -424,6 +553,7 @@ compare_benchmarks() {
 }
 
 run_vllm_benchmark() {
+    ensure_cargo
     header
     info "Running vLLM performance benchmark (baseline vs Virthub)..."
     activate_venv
@@ -446,6 +576,7 @@ run_vllm_benchmark() {
 }
 
 launch_app() {
+    ensure_cargo
     if [ "$#" -eq 0 ]; then error "No application command provided!"; fi
     setup_env
     cargo build -p klnk-shim --release
@@ -470,7 +601,7 @@ except ImportError:
     import tomli as tomllib
 with open('$VIRTHUB_CONFIG','rb') as f:
     config = tomllib.load(f)
-required = ['general','klnk','store','master','transport']
+required = ['general','klnk','store','master','transport','precision']
 for s in required:
     if s not in config:
         print(f'Missing section [{s}]')
@@ -481,6 +612,7 @@ print('Configuration valid')
 }
 
 generate_docs() {
+    ensure_cargo
     header
     info "Generating documentation..."
     cargo doc --no-deps --workspace --document-private-items
@@ -488,6 +620,7 @@ generate_docs() {
 }
 
 run_lint() {
+    ensure_cargo
     header
     info "Running linters..."
     cargo fmt --all -- --check
@@ -498,13 +631,34 @@ run_lint() {
 clean() {
     header
     info "Cleaning build artifacts..."
-    if command -v cargo &>/dev/null; then
+    if command -v cargo &> /dev/null; then
         cargo clean
     else
-        rm -rf target
+        warn "cargo not found; skipping cargo clean."
     fi
     rm -rf "$TEST_REPORT_DIR" /tmp/virthub_*.sock /tmp/virthub_*.pid /tmp/virthub_*.log
     success "Cleanup complete"
+}
+
+run_stress_tests() {
+    warn "Stress tests are not implemented yet. Skipping."
+}
+
+run_chaos_tests() {
+    warn "Chaos tests are not implemented yet. Skipping."
+}
+
+run_docker() {
+    warn "Docker run not implemented in run.sh. Please use docker run manually."
+}
+
+deploy_kubernetes() {
+    warn "Kubernetes deployment not implemented in run.sh. Please use kubectl manually."
+}
+
+run_tests_with_coverage() {
+    ensure_cargo
+    warn "Coverage tests are not implemented yet. Skipping."
 }
 
 show_help() {
@@ -516,14 +670,20 @@ Usage:
 
 Options:
   --test [crate]             Run Rust tests (all or specific crate)
+  --test-precision           Run precision predictor tests
+  --test-pspkv               Run PSP-KV storage tests
+  --test-kernels             Run PSP-KV GPU kernel tests
   --test-python              Run Python unit tests
   --test-integration         Run Python integration tests
   --test-all                 Run complete test suite
   --test-stress              Run concurrent stress tests
   --test-chaos               Run chaos engineering tests
-  --bench                    Run benchmarks
+  --bench                    Run benchmarks (cargo bench)
   --bench-compare            Compare against baseline
+  --bench-predictor          Run precision predictor benchmarks
+  --bench-all                Run all Rust benchmarks
   --benchmark-vllm [args]    Run vLLM performance benchmark (baseline vs Virthub)
+  --build-kernels            Build PSP-KV GPU kernels (CMake)
   --daemon                   Start daemon in foreground
   --daemon-start             Start daemon in background
   --daemon-stop              Stop background daemon
@@ -542,7 +702,7 @@ Options:
   --generate-docs            Generate API documentation
   --validate-config          Validate virthub.toml
   --setup-env                Configure HugePages and limits (root)
-  --setup-env-check           Check environment prerequisites
+  --setup-env-check          Check environment prerequisites
   --clean                    Clean build artifacts
   --help, -h                 Show this help
 
@@ -552,6 +712,10 @@ Examples:
   ./run.sh --cluster --cluster-config conf/cluster.toml
   ./run.sh --cluster && ./run.sh --test-integration
   ./run.sh --benchmark-vllm --prompts 8 --max-tokens 32
+  ./run.sh --test-precision
+  ./run.sh --test-pspkv
+  ./run.sh --build-kernels
+  ./run.sh --test-kernels
 EOF
 }
 
@@ -563,6 +727,9 @@ main() {
 
     case "$1" in
         --test)            shift; run_tests "${1:-}" ;;
+        --test-precision)  shift; run_precision_tests ;;
+        --test-pspkv)      shift; run_pspkv_tests ;;
+        --test-kernels)    shift; test_kernels ;;
         --test-python)     shift; run_python_tests ;;
         --test-integration) shift; run_python_integration ;;
         --test-all)        shift; run_all_tests ;;
@@ -570,7 +737,10 @@ main() {
         --test-chaos)      shift; run_chaos_tests ;;
         --bench)           shift; run_benchmarks ;;
         --bench-compare)   shift; compare_benchmarks ;;
+        --bench-predictor) shift; run_predictor_bench ;;
+        --bench-all)       shift; run_all_benches ;;
         --benchmark-vllm)  shift; run_vllm_benchmark "$@" ;;
+        --build-kernels)   shift; build_kernels ;;
         --daemon)          launch_daemon ;;
         --daemon-start)    start_daemon_background ;;
         --daemon-stop)     stop_daemon ;;

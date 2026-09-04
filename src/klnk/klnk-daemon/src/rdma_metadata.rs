@@ -9,17 +9,10 @@
 //! - Provides a `push_metadata_to_peers` function that writes the latest snapshot
 //!   directly into every remote node’s metadata region, avoiding polling overhead.
 //! - Supports **variable‑sized coherence units** via the existing `page_size` field.
-//!
-//! ## Performance Optimizations
-//!
-//! - Uses `std::sync::RwLock` for the metadata buffer to reduce external dependencies.
-//! - `refresh_metadata` serialises only when the buffer content changes (via version).
-//! - Push to peers uses a single RDMA write per peer, with batching if needed.
-//! - Invalidation buffer remains available for future notification channel.
 
 use crate::invalidation::InvalidationBuffer;
-use klnk_core::control_plane::{ControlPlaneManager, DistributedPageEntry};
-use klnk_core::domain::{NodeId, PageCoherenceState};
+use klnk_core::control_plane::ControlPlaneManager;
+use klnk_core::domain::{DistributedPageEntry, NodeId, PageCoherenceState};
 use librmashim::{RmaTransportEngine, RegisteredRegion};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
@@ -161,8 +154,6 @@ impl RdmaMetadataPublisher {
     }
 
     /// Builds a metadata snapshot from the current control plane state.
-    /// The snapshot includes all page states, which may have **variable sizes**
-    /// if the control plane has been updated to track non‑2MB coherence units.
     fn build_snapshot(&self) -> MetadataSnapshot {
         let entries: Vec<SerializedPageEntry> = self
             .control_plane
@@ -209,32 +200,22 @@ impl RdmaMetadataPublisher {
     }
 
     /// Pushes the current metadata snapshot to all known remote nodes.
-    ///
-    /// For each remote node listed in the control plane, this function:
-    /// 1. Reads the remote node’s endpoint info (metadata buffer address and rkey).
-    /// 2. Writes the local metadata buffer directly into the remote buffer via RDMA write.
-    /// 3. Optionally writes a notification (immediate data) into the remote’s
-    ///    invalidation buffer to signal that metadata has been updated.
     pub async fn push_metadata_to_peers(&self) {
         if self.metadata_region.is_none() {
             warn!("No local metadata region registered; cannot push to peers");
             return;
         }
 
-        // Refresh metadata first to ensure the buffer is up-to-date.
         if let Err(e) = self.refresh_metadata() {
             error!("Failed to refresh metadata before push: {}", e);
             return;
         }
 
-        // Extract the buffer content and length *before* any async call,
-        // so the RwLockReadGuard is dropped early.
         let (local_vaddr, len) = {
             let buf = self.buffer.read().unwrap();
             (buf.as_ptr() as u64, buf.len())
         };
 
-        // Obtain all remote node infos from the control plane.
         let remote_nodes: Vec<(NodeId, SocketAddr)> = self
             .control_plane
             .get_all_remote_nodes()
@@ -243,7 +224,6 @@ impl RdmaMetadataPublisher {
             .collect();
 
         for (node_id, peer_addr) in remote_nodes {
-            // Get the remote node's metadata region details (address and rkey).
             let remote_info = match self.control_plane.get_remote_node(node_id) {
                 Some(info) => info,
                 None => {
@@ -269,7 +249,6 @@ impl RdmaMetadataPublisher {
                 continue;
             }
 
-            // Perform the RDMA write to push metadata.
             if let Err(e) = self
                 .rma_engine
                 .rdma_write(peer_addr, remote_meta_vaddr, remote_meta_rkey, local_vaddr, len)
@@ -279,7 +258,6 @@ impl RdmaMetadataPublisher {
                 continue;
             }
 
-            // Optionally write a notification into the remote's invalidation buffer.
             if let Some(inval_info) = self.control_plane.get_remote_node(node_id) {
                 if inval_info.invalidation_vaddr != 0 {
                     let immediate_data = self.metadata_version() as u32;

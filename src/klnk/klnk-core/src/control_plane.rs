@@ -16,21 +16,21 @@
 //!
 //! ## Self‑Invalidation Support
 //!
-//! The new `get_page_version` method returns the current version of a coherence
+//! The `get_page_version` method returns the current version of a coherence
 //! entry.  Readers can compare their local version against this value and
 //! invalidate their copy when they detect a mismatch – a **lazy, requester‑driven**
 //! approach that eliminates writer‑side CPU overhead for invalidation messages.
 //!
-//! ## Performance Optimizations
+//! ## Opaque Metadata
 //!
-//! - Page state entries are stored as `Arc<DistributedPageEntry>` to avoid
-//!   expensive clones when reading.
-//! - Batch update methods are provided to reduce lock acquisitions.
-//! - `DashMap` is used for concurrent access with minimal contention.
+//! Each `DistributedPageEntry` now includes an opaque `metadata: Vec<u8>` field.
+//! The control plane stores and replicates this field without interpretation,
+//! enabling upper layers (e.g., KV‑cache management) to attach serialized
+//! policies such as precision levels or sidecar descriptors.
 
 use crate::domain::{
     GlobalRegionId, MemoryRegionDescriptor, NodeId, PageCoherenceState,
-    RemoteEndpointInfo,
+    RemoteEndpointInfo, DistributedPageEntry,
 };
 use dashmap::DashMap;
 use std::sync::Arc;
@@ -53,38 +53,6 @@ pub enum ControlPlaneError {
 
     #[error("Lock release error: resource 0x{resource_id:x} not held by client PID {client_pid}")]
     LockNotHeld { resource_id: u64, client_pid: u32 },
-}
-
-/// Metadata tracking distributed page state across cluster nodes.
-///
-/// The `page_size` field defines the exact length of the coherence unit.
-/// It can be any value (4 KB, 2 MB, or an arbitrary block size), enabling
-/// variable‑sized coherence domains.
-#[derive(Debug, Clone)]
-pub struct DistributedPageEntry {
-    pub page_vaddr: u64,
-    pub page_size: usize,
-    pub coherence_state: PageCoherenceState,
-    pub primary_owner: NodeId,
-    /// List of nodes that hold a SharedRead copy of this page.
-    pub replica_holders: Vec<NodeId>,
-    /// Version number incremented on every exclusive write.
-    /// Used by readers for self‑invalidation.
-    pub version: u64,
-}
-
-impl DistributedPageEntry {
-    /// Creates a new entry with version 0 and an empty reader list.
-    pub fn new(page_vaddr: u64, page_size: usize, owner: NodeId) -> Self {
-        Self {
-            page_vaddr,
-            page_size,
-            coherence_state: PageCoherenceState::Invalid,
-            primary_owner: owner,
-            replica_holders: Vec::new(),
-            version: 0,
-        }
-    }
 }
 
 /// State of an active distributed spinlock / mutex.
@@ -122,9 +90,26 @@ impl ControlPlaneManager {
     /// Page state entries are created for each `staging_page_size` chunk within
     /// the region.  The exact base address of each chunk is stored, enabling
     /// lookups at any granularity.
+    ///
+    /// This variant initialises all page entries with **empty** opaque metadata.
+    /// Use `register_region_with_metadata` or `set_page_metadata` to attach
+    /// upper‑layer policies.
     pub fn register_region(
         &self,
         descriptor: MemoryRegionDescriptor,
+    ) -> Result<(), ControlPlaneError> {
+        self.register_region_with_metadata(descriptor, Vec::new())
+    }
+
+    /// Registers a new virtual memory region with the control plane,
+    /// assigning the same opaque metadata to every page entry.
+    ///
+    /// This is a convenience for cases where the entire region shares a single
+    /// policy.  For per‑page metadata, use `set_page_metadata` afterwards.
+    pub fn register_region_with_metadata(
+        &self,
+        descriptor: MemoryRegionDescriptor,
+        metadata: Vec<u8>,
     ) -> Result<(), ControlPlaneError> {
         let region_id = descriptor.region_id;
 
@@ -137,7 +122,12 @@ impl ControlPlaneManager {
         let end_addr = descriptor.main_vaddr + descriptor.region_size as u64;
 
         while curr_addr < end_addr {
-            let entry = Arc::new(DistributedPageEntry::new(curr_addr, page_size, self.local_node_id));
+            let entry = Arc::new(DistributedPageEntry::new_with_metadata(
+                curr_addr,
+                page_size,
+                self.local_node_id,
+                metadata.clone(),
+            ));
             self.page_states.insert(curr_addr, entry);
             curr_addr += page_size as u64;
         }
@@ -212,7 +202,7 @@ impl ControlPlaneManager {
             .collect()
     }
 
-    /// Adds a node to the readers list of a page (used when a node obtains a SharedRead copy).
+    /// Adds a node to the readers list of a page.
     pub fn add_reader(&self, page_vaddr: u64, reader_node: NodeId) -> bool {
         if let Some(mut entry) = self.page_states.get_mut(&page_vaddr) {
             let entry = Arc::make_mut(&mut entry);
@@ -232,7 +222,7 @@ impl ControlPlaneManager {
             .collect()
     }
 
-    /// Removes a node from the readers list (e.g., on eviction or invalidation).
+    /// Removes a node from the readers list.
     pub fn remove_reader(&self, page_vaddr: u64, reader_node: NodeId) -> bool {
         if let Some(mut entry) = self.page_states.get_mut(&page_vaddr) {
             let entry = Arc::make_mut(&mut entry);
@@ -269,20 +259,33 @@ impl ControlPlaneManager {
     }
 
     /// Returns the current version number of a coherence entry.
-    ///
-    /// This enables **lazy self‑invalidation**: a reader can compare its local
-    /// version against this value and, if they differ, invalidate its copy and
-    /// re‑fetch the data.  The writer does not need to send explicit invalidation
-    /// messages.
     pub fn get_page_version(&self, page_vaddr: u64) -> Option<u64> {
         self.page_states.get(&page_vaddr).map(|e| e.version)
     }
 
     /// Returns a snapshot of all current page states.
-    /// This is used by the daemon to generate RDMA-accessible metadata.
-    /// Returns `Arc` handles to avoid deep copies.
     pub fn get_all_page_states(&self) -> Vec<Arc<DistributedPageEntry>> {
         self.page_states.iter().map(|entry| entry.clone()).collect()
+    }
+
+    /// Sets the opaque metadata for a specific page.
+    ///
+    /// This is used by upper layers to attach serialized policies such as
+    /// precision levels, sidecar pointers, or head masks.  The DSM core does
+    /// not interpret the bytes.
+    pub fn set_page_metadata(&self, page_vaddr: u64, metadata: Vec<u8>) -> bool {
+        if let Some(mut entry) = self.page_states.get_mut(&page_vaddr) {
+            let entry = Arc::make_mut(&mut entry);
+            entry.metadata = metadata;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Retrieves a clone of the opaque metadata for a page.
+    pub fn get_page_metadata(&self, page_vaddr: u64) -> Option<Vec<u8>> {
+        self.page_states.get(&page_vaddr).map(|e| e.metadata.clone())
     }
 
     /// Registers a remote cluster node's endpoint info.
@@ -301,8 +304,6 @@ impl ControlPlaneManager {
     }
 
     /// Returns a list of all currently registered remote nodes.
-    ///
-    /// This is used by the daemon to push metadata snapshots to every peer.
     pub fn get_all_remote_nodes(&self) -> Vec<RemoteEndpointInfo> {
         self.remote_nodes.iter().map(|entry| entry.clone()).collect()
     }
@@ -387,48 +388,67 @@ mod tests {
     use super::*;
     use crate::domain::MemoryProtectionFlags;
 
+    fn create_test_descriptor(region_id: GlobalRegionId, vaddr: u64, size: usize, page_size: usize) -> MemoryRegionDescriptor {
+        MemoryRegionDescriptor {
+            region_id,
+            main_vaddr: vaddr,
+            region_size: size,
+            staging_vaddr: 0,
+            staging_num_pages: size / page_size,
+            staging_page_size: page_size,
+            prot_flags: MemoryProtectionFlags(MemoryProtectionFlags::READ | MemoryProtectionFlags::WRITE),
+            mem_flags: 0,
+            version: 0,
+        }
+    }
+
     #[tokio::test]
     async fn test_region_registration_lifecycle() {
         let cp = ControlPlaneManager::new(NodeId(1));
-        let region_id = GlobalRegionId {
-            owner_pid: 100,
-            shmid: 1,
-        };
+        let region_id = GlobalRegionId { owner_pid: 100, shmid: 1 };
+        let descriptor = create_test_descriptor(region_id, 0x7fff_0000_0000, 4 * 1024 * 1024, 2 * 1024 * 1024);
 
-        let descriptor = MemoryRegionDescriptor {
-            region_id,
-            main_vaddr: 0x7fff_0000_0000,
-            region_size: 4 * 1024 * 1024,
-            staging_vaddr: 0x7fff_1000_0000,
-            staging_num_pages: 2,
-            staging_page_size: 2 * 1024 * 1024,
-            prot_flags: MemoryProtectionFlags(
-                MemoryProtectionFlags::READ | MemoryProtectionFlags::WRITE,
-            ),
-            mem_flags: 0,
-            version: 0,
-        };
+        cp.register_region(descriptor.clone()).expect("Registration should succeed");
+        assert_eq!(cp.get_region(region_id).unwrap().main_vaddr, 0x7fff_0000_0000);
 
-        cp.register_region(descriptor.clone())
-            .expect("Registration should succeed");
+        let entry = cp.lookup_page_state(0x7fff_0000_0000).expect("Page state must exist");
+        assert_eq!(entry.metadata.len(), 0);
+        assert_eq!(entry.coherence_state, PageCoherenceState::Invalid);
 
-        let fetched = cp.get_region(region_id).expect("Fetch should succeed");
-        assert_eq!(fetched.main_vaddr, 0x7fff_0000_0000);
-
-        // Page state lookup test – use the exact base address, not an offset.
-        let page_entry = cp
-            .lookup_page_state(0x7fff_0000_0000)
-            .expect("Page state must exist");
-        assert_eq!(page_entry.page_vaddr, 0x7fff_0000_0000);
-        assert_eq!(page_entry.coherence_state, PageCoherenceState::Invalid);
-        assert_eq!(page_entry.version, 0);
-
-        // Looking up an address that is not an exact base should return None.
-        assert!(cp.lookup_page_state(0x7fff_0000_1000).is_none());
-
-        cp.deregister_region(region_id)
-            .expect("Deregistration should succeed");
+        cp.deregister_region(region_id).expect("Deregistration should succeed");
         assert!(cp.get_region(region_id).is_err());
+    }
+
+    #[tokio::test]
+    async fn test_region_registration_with_metadata() {
+        let cp = ControlPlaneManager::new(NodeId(1));
+        let region_id = GlobalRegionId { owner_pid: 101, shmid: 2 };
+        let descriptor = create_test_descriptor(region_id, 0x7fff_1000_0000, 2 * 1024 * 1024, 4096);
+        let metadata = vec![1, 2, 3, 4];
+
+        cp.register_region_with_metadata(descriptor, metadata.clone()).unwrap();
+
+        let entry = cp.lookup_page_state(0x7fff_1000_0000).unwrap();
+        assert_eq!(entry.metadata, metadata);
+        let entry2 = cp.lookup_page_state(0x7fff_1000_1000).unwrap();
+        assert_eq!(entry2.metadata, metadata);
+    }
+
+    #[tokio::test]
+    async fn test_set_and_get_page_metadata() {
+        let cp = ControlPlaneManager::new(NodeId(1));
+        let region_id = GlobalRegionId { owner_pid: 102, shmid: 3 };
+        let descriptor = create_test_descriptor(region_id, 0x7fff_2000_0000, 4096, 4096);
+        cp.register_region(descriptor).unwrap();
+
+        let vaddr = 0x7fff_2000_0000;
+        let new_meta = vec![9, 8, 7];
+        assert!(cp.set_page_metadata(vaddr, new_meta.clone()));
+        assert_eq!(cp.get_page_metadata(vaddr), Some(new_meta));
+
+        // Non-existent address returns false / None
+        assert!(!cp.set_page_metadata(0x1234, vec![0]));
+        assert_eq!(cp.get_page_metadata(0x1234), None);
     }
 
     #[tokio::test]
@@ -436,40 +456,19 @@ mod tests {
         let cp = ControlPlaneManager::new(NodeId(1));
         let resource_id = 0xDEADBEEF;
 
-        cp.acquire_lock(resource_id, 100)
-            .await
-            .expect("First acquire should succeed");
-
+        cp.acquire_lock(resource_id, 100).await.expect("First acquire should succeed");
         let res = cp.acquire_lock(resource_id, 200).await;
         assert!(matches!(res, Err(ControlPlaneError::LockConflict { .. })));
 
-        cp.release_lock(resource_id, 100)
-            .await
-            .expect("Release should succeed");
-
-        cp.release_lock(resource_id, 200)
-            .await
-            .expect("Second owner release should succeed");
+        cp.release_lock(resource_id, 100).await.expect("Release should succeed");
+        cp.release_lock(resource_id, 200).await.expect("Second owner release should succeed");
     }
 
     #[test]
     fn test_version_increment_on_write() {
         let cp = ControlPlaneManager::new(NodeId(1));
-        let region_id = GlobalRegionId {
-            owner_pid: 100,
-            shmid: 1,
-        };
-        let descriptor = MemoryRegionDescriptor {
-            region_id,
-            main_vaddr: 0x7fff_0000_0000,
-            region_size: 4096,
-            staging_vaddr: 0,
-            staging_num_pages: 1,
-            staging_page_size: 4096,
-            prot_flags: MemoryProtectionFlags(0x3),
-            mem_flags: 0,
-            version: 0,
-        };
+        let region_id = GlobalRegionId { owner_pid: 100, shmid: 1 };
+        let descriptor = create_test_descriptor(region_id, 0x7fff_0000_0000, 4096, 4096);
         cp.register_region(descriptor).unwrap();
         let vaddr = 0x7fff_0000_0000;
 
@@ -480,7 +479,6 @@ mod tests {
         let entry = cp.lookup_page_state(vaddr).unwrap();
         assert_eq!(entry.version, 1);
 
-        // Version unchanged for SharedRead.
         cp.update_page_state(vaddr, PageCoherenceState::SharedRead, NodeId(1));
         let entry = cp.lookup_page_state(vaddr).unwrap();
         assert_eq!(entry.version, 1);
@@ -489,21 +487,8 @@ mod tests {
     #[test]
     fn test_add_remove_readers() {
         let cp = ControlPlaneManager::new(NodeId(1));
-        let region_id = GlobalRegionId {
-            owner_pid: 100,
-            shmid: 1,
-        };
-        let descriptor = MemoryRegionDescriptor {
-            region_id,
-            main_vaddr: 0x7fff_0000_0000,
-            region_size: 4096,
-            staging_vaddr: 0,
-            staging_num_pages: 1,
-            staging_page_size: 4096,
-            prot_flags: MemoryProtectionFlags(0x3),
-            mem_flags: 0,
-            version: 0,
-        };
+        let region_id = GlobalRegionId { owner_pid: 100, shmid: 1 };
+        let descriptor = create_test_descriptor(region_id, 0x7fff_0000_0000, 4096, 4096);
         cp.register_region(descriptor).unwrap();
         let vaddr = 0x7fff_0000_0000;
         let node2 = NodeId(2);
@@ -519,59 +504,25 @@ mod tests {
 
     #[test]
     fn test_variable_sized_entries() {
-        // Create entries with different sizes and verify they can be looked up
-        // by their exact base addresses.
         let cp = ControlPlaneManager::new(NodeId(1));
 
-        // Register a region with 4 KB pages
-        let region_id_4k = GlobalRegionId {
-            owner_pid: 100,
-            shmid: 1,
-        };
-        let desc_4k = MemoryRegionDescriptor {
-            region_id: region_id_4k,
-            main_vaddr: 0x1000,
-            region_size: 12288,
-            staging_vaddr: 0,
-            staging_num_pages: 3,
-            staging_page_size: 4096,
-            prot_flags: MemoryProtectionFlags(0x3),
-            mem_flags: 0,
-            version: 0,
-        };
+        // 4 KB page region
+        let region_id_4k = GlobalRegionId { owner_pid: 100, shmid: 1 };
+        let desc_4k = create_test_descriptor(region_id_4k, 0x1000, 12288, 4096);
         cp.register_region(desc_4k).unwrap();
 
-        // Register another region with 2 MB pages
-        let region_id_2m = GlobalRegionId {
-            owner_pid: 101,
-            shmid: 2,
-        };
-        let desc_2m = MemoryRegionDescriptor {
-            region_id: region_id_2m,
-            main_vaddr: 0x200000,
-            region_size: 2 * 1024 * 1024,
-            staging_vaddr: 0,
-            staging_num_pages: 1,
-            staging_page_size: 2 * 1024 * 1024,
-            prot_flags: MemoryProtectionFlags(0x3),
-            mem_flags: 0,
-            version: 0,
-        };
+        // 2 MB page region
+        let region_id_2m = GlobalRegionId { owner_pid: 101, shmid: 2 };
+        let desc_2m = create_test_descriptor(region_id_2m, 0x200000, 2 * 1024 * 1024, 2 * 1024 * 1024);
         cp.register_region(desc_2m).unwrap();
 
-        // Lookup should succeed for exact base addresses
         assert!(cp.lookup_page_state(0x1000).is_some());
         assert!(cp.lookup_page_state(0x2000).is_some());
         assert!(cp.lookup_page_state(0x200000).is_some());
 
-        // Get version for self‑invalidation
         assert_eq!(cp.get_page_version(0x1000), Some(0));
-
-        // Update version for 4 KB page
         cp.update_page_state(0x1000, PageCoherenceState::ExclusiveWrite, NodeId(1));
         assert_eq!(cp.get_page_version(0x1000), Some(1));
-
-        // Other entries unaffected
         assert_eq!(cp.get_page_version(0x2000), Some(0));
         assert_eq!(cp.get_page_version(0x200000), Some(0));
     }

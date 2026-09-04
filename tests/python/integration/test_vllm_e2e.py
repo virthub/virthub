@@ -88,7 +88,6 @@ def create_engine_with_connector(model_name: str, connector_version: str = "auto
     if not CONNECTOR_AVAILABLE:
         pytest.skip("Virthub connector not installed")
 
-    # Select the adapter version
     os.environ["VIRTHUB_VLLM_CONNECTOR_VERSION"] = connector_version
 
     _force_cpu_if_needed()
@@ -215,7 +214,6 @@ class TestVllmVirthub:
         try:
             llm = create_engine_with_connector(model, connector_version=version)
         except Exception as e:
-            # The connector type "virthub" is not yet registered in upstream vLLM.
             if "Unsupported connector type" in str(e):
                 pytest.skip("Virthub connector type not registered in vLLM")
             else:

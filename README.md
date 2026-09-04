@@ -1,13 +1,12 @@
-# Virthub: A Distributed Shared Memory System for LLM Inference
+# Virthub: Distributed Memory Mesh & KV-Cache Infrastructure
 
-**Virthub** (backed by the **KLNK** zero‑copy shared memory kernel transport) is a unified, hardware‑accelerated memory mesh designed for multi‑tier LLM KV‑cache sharing, ultra‑low latency remote memory access (RMA), and distributed virtual memory allocation.
+**Virthub** (backed by the **KLNK** zero-copy shared memory kernel transport) is a unified, hardware-accelerated memory mesh designed for multi-tier LLM KV-cache sharing, ultra-low latency remote memory access (RMA), and distributed virtual memory allocation.
 
-> **⚡ Current Status**  
-> Hardware‑accelerated RDMA and real eBPF telemetry are not yet fully integrated. The transport layer currently uses a software fallback (TCP/io_uring), and eBPF probes are simulated. The prefetch engine is fully wired but does not move data until real RDMA is enabled. All connectors and APIs are functional and ready for testing; multi‑node performance benefits will appear after hardware acceleration is implemented.
+> **Note:** Hardware‑accelerated RDMA and real eBPF telemetry are not yet fully integrated. The transport layer currently uses a software fallback (TCP/io_uring), and eBPF probes are simulated. The prefetch engine is fully wired but does not move data until real RDMA is enabled. All connectors and APIs are functional and ready for testing; multi‑node performance benefits will appear after hardware acceleration is implemented.
 
 ---
 
-## 🏗️ Architecture Overview
+## Architecture Overview
 
 ```
   +-------------------------------------------------+
@@ -23,6 +22,8 @@
   |  * Master & Scheduler (Raft, NUMA Placement)    |
   |  * Indexing Subsystem (RobinHood, Radix)        |
   |  * Multi-Tier Store   (VRAM / DRAM / NVMe)      |
+  |  * Precision Predictor (Allocation‑Time, SIMD)  |
+  |  * PSP‑KV Format Manager (Basic/Enhanced/BT‑KV) |
   |                                                 |
   |  +-------------------------------------------+  |
   |  |         KLNK Engine (klnk-daemon)         |  |
@@ -44,7 +45,7 @@
 
 ---
 
-## 🧩 Key Components & Crate Layout
+## Key Components & Crate Layout
 
 | Component Directory | Module Crate | Functionality & Role |
 | --- | --- | --- |
@@ -54,12 +55,52 @@
 | **`virthub/src/klnk/klnk-ebpf/`** | `klnk-ebpf` | eBPF telemetry for stride detection (currently simulated; real probes planned). |
 | **`virthub/src/klnk/klnk-uffd/`** | `klnk-uffd` | Userfaultfd handler for zero‑copy page fault resolution with `UFFDIO_MOVE`. |
 | **`virthub/src/klnk/klnk-shim/`** | `klnk-shim` | LD_PRELOAD shim for staging memory allocation. |
-| **`virthub/src/klnk/librmashim/`** | `librmashim` | Hardware transport shim providing zero‑copy RDMA Read/Write over Verbs (software fallback currently). |
-| **`virthub/src/store/`** | `store` | Multi‑tier storage manager governing L0 (GPU VRAM), L1 (Host DRAM), and L2 (NVMe SSD) page promotion/demotion, plus staging pool. |
-| **`virthub/src/index/`** | `index` | Lock‑free Robin Hood hash index (128‑bit key), 64‑bit virtual address radix tree, and 2Q cache eviction policy. |
-| **`virthub/src/master/`** | `master` | Embedded Raft consensus state engine and NUMA‑aware, load‑balanced cluster placement scheduler. |
-| **`virthub/src/connectors/`** | `vllm`, `sglang`, `lmcache` | Specialized zero‑copy KV‑cache swapping connectors for LLM inference frameworks (Rust client). |
+| **`virthub/src/klnk/librmashim/`** | `librmashim` | Hardware transport shim providing zero-copy RDMA Read/Write over Verbs (software fallback currently). |
+| **`virthub/src/klnk/klnk-dsm-api/`** | `klnk-dsm-api` | Adapter crate implementing the generic `DsmBackend` trait using the KLNK DSM infrastructure. |
+| **`virthub/src/api/`** | `virthub-api` | Shared API trait definitions for decoupled DSM and KV-cache interaction. |
+| **`virthub/src/precision/`** | `precision` | Allocation‑time precision prediction engine (deterministic, vectorizable). |
+| **`virthub/src/store/`** | `store` | Multi-tier storage manager governing L0 (GPU VRAM), L1 (Host DRAM), and L2 (NVMe SSD) page promotion/demotion, plus staging pool and PSP‑KV format structures. |
+| **`virthub/src/index/`** | `index` | Lock-free Robin Hood hash index (128-bit key), 64-bit virtual address radix tree, and 2Q cache eviction policy. |
+| **`virthub/src/master/`** | `master` | Embedded Raft consensus state engine and NUMA-aware, load-balanced cluster placement scheduler. |
+| **`virthub/src/connectors/`** | `vllm`, `sglang`, `lmcache` | Specialized zero-copy KV-cache swapping connectors for LLM inference frameworks (Rust client). |
 | **`bindings/python/`** | `virthub` (Python package) | Python bindings for vLLM (V1 & V2), SGLang, and LMCache integration. Includes in‑memory stubs for testing when the Rust client is not built. |
+| **`virthub/kernels/`** | (separate build) | CUDA/Triton reference kernels for PSP‑KV formats (Basic, Enhanced, BT‑KV). Not part of the Rust workspace. |
+
+---
+
+## DSM–KV Cache Decoupling
+
+The distributed shared memory (DSM) core is **completely decoupled** from the KV‑cache management layer.
+
+- `virthub-api` defines the **`DsmBackend` trait**, the only interface through which upper layers interact with DSM.
+- `klnk-dsm-api` implements that trait by calling the existing `klnk-core` control plane and `librmashim` transport.
+- Upper layers (`store`, `precision`, `connectors`) depend only on `virthub-api`, never on concrete DSM internals.
+- DSM page entries carry an **opaque `metadata: Vec<u8>`** field. KV‑cache policies (e.g., precision level, sidecar descriptor) are serialized into this field and replicated by the DSM without interpretation.
+
+This design:
+
+- Allows DSM to be reused for other distributed memory workloads.
+- Enables KV‑cache components to be tested with mock `DsmBackend` implementations.
+- Prevents accidental coupling between hardware transport details and LLM‑specific storage formats.
+
+---
+
+## PSP‑KV Formats and Precision Prediction
+
+Virthub includes **precision‑scalable paged KV‑cache (PSP‑KV)** support.
+
+- **Three physical format generations** are defined:
+  - `Basic` – in‑band metadata, symmetric 1D layout, staging dequantization.
+  - `Enhanced` – out‑of‑band sidecar, asymmetric 1D layout, fused dequantization.
+  - `BT‑KV` – hardware‑native 2D block‑tiled layout for Hopper/Blackwell TMA.
+- The format is **fixed globally via configuration** (`format_generation` in `[precision]`).
+- An **allocation‑time precision predictor** (`precision` crate) assigns one of four precision levels to each block:
+  - `0` = FP16/BF16 (lossless)
+  - `1` = FP8
+  - `2` = FP8 + residual
+  - `3` = pruned (head‑mask driven)
+- The predictor uses deterministic structural priors (attention sinks, local windows, critical layers) and a **3‑state memory‑pressure hysteresis** to avoid runtime telemetry or background threads.
+- All precision decisions are packed into a 32‑bit policy word stored alongside the block’s DSM metadata.
 
 ---
 
@@ -74,6 +115,7 @@ It also builds the native Rust extension (`_virthub`) automatically via `maturin
 ./install.sh                     # basic (Rust + dev tools + native extension)
 ./install.sh --with-integration --engine vllm   # also installs vLLM + LMCache
 ./install.sh --with-integration --engine sglang # installs SGLang + LMCache
+./install.sh --with-kernels      # installs CUDA toolkit, but kernel build may be skipped until CUDA 12.3+ is available
 ```
 
 The Python virtual environment is created at `.venv/` and activated automatically by `run.sh` for Python tests.
@@ -86,7 +128,7 @@ cargo build --release --workspace
 
 ### 3. Configuration (`conf/virthub.toml`)
 
-Virthub uses a central TOML configuration file. Below is an example with all major sections, including the new `[vllm]` block for connector version selection:
+Virthub uses a central TOML configuration file. Below is an example with all major sections, including the new `[vllm]` and `[precision]` blocks:
 
 ```toml
 [general]
@@ -148,9 +190,19 @@ numa_node = -1
 operation_timeout_ms = 500
 memlock_limit = 17179869184  # 16 GB
 
-# vLLM integration settings (new)
 [vllm]
 connector_version = "auto"   # "auto", "v1", or "v2"
+
+# Precision prediction and PSP-KV format configuration
+[precision]
+format_generation = 1       # 0=Basic, 1=Enhanced, 2=BT-KV
+sink_window = 16
+local_window = 64
+critical_layer_count = 2
+elevated_pressure_threshold = 0.78
+nominal_pressure_threshold = 0.70
+critical_pressure_threshold = 0.88
+critical_relax_threshold = 0.82
 ```
 
 For a **multi‑node cluster**, use the ready‑to‑use example in `conf/cluster.toml`.  
@@ -173,7 +225,7 @@ You can also start a local 3‑node cluster for testing:
 
 ---
 
-## 📦 Python Bindings
+## Python Bindings
 
 The Python bindings are located in [`bindings/python/`](./bindings/python/). They provide connectors for vLLM, SGLang, and LMCache. When the native Rust client is not built, **in‑memory stubs** are automatically used, allowing tests and development without RDMA hardware.
 
@@ -201,11 +253,11 @@ meta = connector.save_kv_layer(...)   # or pre_forward/post_forward for V2
 
 ---
 
-## 🦀 Framework Integration Examples (Rust)
+## Framework Integration Examples (Rust)
 
 > **Note:** The crate names in Rust use underscores, e.g., `virthub_connector_vllm`, `virthub_connector_sglang`, `virthub_connector_lmcache`.
 
-### 1. vLLM (PagedAttention KV‑Cache Swapping)
+### 1. vLLM (PagedAttention KV-Cache Swapping)
 
 ```rust
 use virthub_config::VirthubConfig;
@@ -276,7 +328,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ---
 
-## 🧪 Testing
+## Testing
 
 Virthub uses a unified `run.sh` script to run both Rust and Python tests. The Python tests use **in‑memory stubs** when the Rust client is not available, so they can run immediately after installation.
 
@@ -284,32 +336,32 @@ Virthub uses a unified `run.sh` script to run both Rust and Python tests. The Py
 |---------|-------------|
 | `./run.sh --test` | Run Rust unit & integration tests (`cargo test`). |
 | `./run.sh --test <crate>` | Run tests for a specific Rust crate. |
+| `./run.sh --test-precision` | Run precision predictor tests. |
+| `./run.sh --test-pspkv` | Run PSP‑KV storage tests. |
+| `./run.sh --test-kernels` | Run PSP‑KV GPU kernel tests (**skipped if kernels are not built**). |
 | `./run.sh --test-python` | Run Python unit tests (fast, mock‑based, no external dependencies). |
 | `./run.sh --test-integration` | Run Python integration tests (requires `klnk-daemon` binary; tests skip if engines are not installed or unsupported). |
 | `./run.sh --test-all` | Run both Rust and Python tests (unit + integration). |
+| `./run.sh --bench-predictor` | Run precision predictor benchmarks. |
+| `./run.sh --bench-all` | Run all Rust benchmarks. |
+| `./run.sh --build-kernels` | Build PSP‑KV GPU kernels (**disabled by default** until CUDA 12.3+ is installed). |
 | `./run.sh --cluster` | Start a local 3‑node cluster for multi‑node testing. |
 
-> **Note:** Python integration tests are skipped automatically if the required dependencies are not installed. To install them, run `./install.sh --with-integration --engine <name>`. The vLLM baseline test currently skips on CPU‑only machines because of a known vLLM issue; this does not affect Virthub's own functionality.
+> **Note:** Python integration tests are skipped automatically if the required dependencies are not installed. To install them, run `./install.sh --with-integration --engine <name>`. The vLLM baseline test currently skips on CPU‑only machines because of a known vLLM issue; this does not affect Virthub’s own functionality.
 
 ---
 
-## 📖 Further Documentation
+## Further Documentation
 
 - [Multi‑Node Deployment Guide](docs/MULTI_NODE.md) – set up a cluster with multiple daemons.
 - [vLLM Integration Guide](docs/VLLM_INTEGRATION.md) – connect vLLM to Virthub.
 - [SGLang Integration Guide](docs/SGLANG_INTEGRATION.md) – share RadixAttention prefixes.
 - [LMCache Integration Guide](docs/LMCACHE_INTEGRATION.md) – use Virthub as a remote tier for LMCache.
+- [Precision Prediction](docs/PRECISION_PREDICTION.md) – description of the allocation‑time precision predictor.
+- [PSP‑KV Formats](docs/PSP_KV_FORMATS.md) – specification of the three storage format generations.
 
 ---
 
-## 📄 Academic Artifact Notice
-
-This `main` branch contains the **active Rust rewrite** of Virthub.
-
-The original **C implementation of KLNK** evaluated in the associated paper [[10.1109/TPDS.2024.3412833](https://ieeexplore.ieee.org/document/10549837)] is preserved in the [`original`](https://github.com/virthub/virthub/tree/original) branch.
-
----
-
-## 📜 License
+## License
 
 This project is licensed under the [MIT License](LICENSE).

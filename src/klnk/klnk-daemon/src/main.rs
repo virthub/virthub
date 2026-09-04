@@ -6,9 +6,12 @@
 //! distributed coherence, exposes metadata over RDMA, and runs a prefetch engine
 //! that issues speculative RDMA reads based on eBPF telemetry.
 //!
-//! **New:** A background task now periodically pushes the local metadata snapshot
-//! to all remote peers, enabling up‑to‑date version information for lazy
-//! invalidation / self‑invalidation.
+//! **Precision‑Scalable PSP‑KV Integration:**
+//! The daemon now reads the `[precision]` configuration section and logs the
+//! chosen physical format generation and threshold parameters. Although the
+//! actual precision predictor is used by the master scheduler and connectors,
+//! the daemon is responsible for validating the configuration and may later
+//! pass it to the control plane metadata subsystem.
 
 mod prefetch;
 mod rdma_metadata;
@@ -162,6 +165,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             warn!("Using default config.");
             VirthubConfig::default()
         });
+
+    // Log precision configuration
+    info!(
+        "Precision configuration loaded: format_generation={}, sink_window={}, local_window={}, critical_layers={}, thresholds=({:.2}/{:.2}/{:.2}/{:.2})",
+        app_config.precision.format_generation,
+        app_config.precision.sink_window,
+        app_config.precision.local_window,
+        app_config.precision.critical_layer_count,
+        app_config.precision.elevated_pressure_threshold,
+        app_config.precision.nominal_pressure_threshold,
+        app_config.precision.critical_pressure_threshold,
+        app_config.precision.critical_relax_threshold,
+    );
+
     let numa_node = app_config.tuning.numa_node;
 
     // 1. RMA engine
@@ -226,7 +243,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         staging_pool.clone(),
         prefetch_config,
     );
-    // Retrieve the shared prefetched pages map for UFFD handler integration.
     let prefetched_pages = prefetch_engine.get_prefetched_pages();
     prefetch_engine.start();
 
@@ -256,7 +272,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         staging_pool.clone(),
         rma_engine.clone(),
     )?;
-    // Set the prefetched pages map for zero‑copy reuse.
     uffd_handler.set_prefetched_pages(prefetched_pages);
     let uffd_handler = Arc::new(uffd_handler);
 

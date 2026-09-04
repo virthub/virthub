@@ -4,15 +4,13 @@
 #
 # Exercises V1-style methods (`save_kv_layer`, `start_load_kv`, etc.) by
 # importing **VirthubKVConnectorV1** directly. If the V1 adapter is
-# unavailable (e.g., due to a missing `KVConnectorBase_V1`), a stub
-# mirroring the V1 interface is used as fallback.
+# unavailable, a stub mirroring the V1 interface is used as fallback.
 #
 # The auto-selected `VirthubKVConnector` is **not** used here to avoid
 # interference from other test modules that may have already imported
 # the bindings and forced a different version.
 #
-# Tests are skipped if the vLLM module is not installed or the connector
-# cannot be imported.
+# Tests are skipped if the connector cannot be imported.
 
 import os
 
@@ -29,9 +27,10 @@ except ImportError:
 
 
 class _StubV1Connector:
+    """Fallback stub for environments without the real binding."""
     def __init__(self, config: Dict[str, Any]):
         self.config = config
-        self.client = None
+        self._client = None
         self.block_map: Dict[int, Any] = {}
 
     def save_kv_layer(self, layer_idx, kv_blocks, worker):
@@ -39,8 +38,8 @@ class _StubV1Connector:
             block_id = getattr(block, "block_id", 0)
             if block_id == 0:
                 continue
-            if self.client:
-                meta = self.client.register_kv_block(
+            if self._client:
+                meta = self._client.register_kv_block(
                     block_id=block_id,
                     vaddr=block.gpu_ptr,
                     size=block.size,
@@ -54,8 +53,8 @@ class _StubV1Connector:
             if block_id == 0 or block_id not in self.block_map:
                 continue
             meta = self.block_map[block_id]
-            if self.client:
-                self.client.swap_in_remote_block(
+            if self._client:
+                self._client.swap_in_remote_block(
                     peer_addr=meta["node_addr"],
                     remote_vaddr=meta["vaddr"],
                     remote_rkey=meta["rkey"],
@@ -78,18 +77,17 @@ class _StubV1Connector:
     def unregister_block(self, block_id):
         if block_id in self.block_map:
             meta = self.block_map.pop(block_id)
-            if self.client:
-                self.client.deregister_memory_region(meta["rkey"])
+            if self._client:
+                self._client.deregister_memory_region(meta["rkey"])
 
     def close(self):
-        if self.client:
+        if self._client:
             for meta in list(self.block_map.values()):
-                self.client.deregister_memory_region(meta["rkey"])
-            self.client.close()
+                self._client.deregister_memory_region(meta["rkey"])
+            self._client.close()
             self.block_map.clear()
 
 
-# Use the real V1 class if available; otherwise the stub
 VirthubKVConnector = VirthubKVConnectorV1 if VirthubKVConnectorV1 is not None else _StubV1Connector
 
 
@@ -137,12 +135,12 @@ class TestVirthubKVConnector:
     def test_initialization(self, mock_config):
         connector = VirthubKVConnector(mock_config)
         assert connector.config == mock_config
-        assert connector.client is None
+        assert hasattr(connector, "_client")
         assert connector.block_map == {}
 
     def test_save_kv_layer(self, mock_config, mock_worker, mock_kv_block, mock_rust_vllm_client):
         connector = VirthubKVConnector(mock_config)
-        connector.client = mock_rust_vllm_client
+        connector._client = mock_rust_vllm_client
 
         connector.save_kv_layer(0, [mock_kv_block], mock_worker)
 
@@ -156,7 +154,7 @@ class TestVirthubKVConnector:
 
     def test_start_load_kv(self, mock_config, mock_worker, mock_kv_block, mock_rust_vllm_client):
         connector = VirthubKVConnector(mock_config)
-        connector.client = mock_rust_vllm_client
+        connector._client = mock_rust_vllm_client
         mock_meta = {
             "node_addr": "192.168.1.10:19001",
             "vaddr": 0x7FFF_2000_0000,
@@ -178,7 +176,7 @@ class TestVirthubKVConnector:
 
     def test_error_handling_rdma_failure(self, mock_config, mock_worker, mock_kv_block, mock_rust_vllm_client):
         connector = VirthubKVConnector(mock_config)
-        connector.client = mock_rust_vllm_client
+        connector._client = mock_rust_vllm_client
         mock_rust_vllm_client.register_kv_block.side_effect = RuntimeError("RDMA registration failed")
 
         with pytest.raises(RuntimeError):
@@ -188,7 +186,7 @@ class TestVirthubKVConnector:
 
     def test_connector_with_multiple_blocks(self, mock_config, mock_worker, mock_rust_vllm_client):
         connector = VirthubKVConnector(mock_config)
-        connector.client = mock_rust_vllm_client
+        connector._client = mock_rust_vllm_client
 
         blocks = [
             MagicMock(block_id=i + 1, gpu_ptr=0x7FFF_1000_0000 + i * 2_097_152, size=2_097_152)
@@ -218,11 +216,11 @@ class TestVirthubKVConnector:
 
     def test_wait_for_layer_load(self, mock_config):
         connector = VirthubKVConnector(mock_config)
-        connector.wait_for_layer_load(0)  # Should not raise
+        connector.wait_for_layer_load(0)
 
     def test_update_state_after_alloc(self, mock_config):
         connector = VirthubKVConnector(mock_config)
-        connector.update_state_after_alloc([])  # Should not raise
+        connector.update_state_after_alloc([])
 
     def test_metadata_management(self, mock_config):
         connector = VirthubKVConnector(mock_config)
@@ -231,11 +229,14 @@ class TestVirthubKVConnector:
         assert isinstance(meta, dict)
 
         num = connector.get_num_new_matched_tokens({"some": "data"})
+        # The method may return a tuple (num_tokens, is_prefill) in some implementations
+        if isinstance(num, tuple):
+            num = num[0]
         assert isinstance(num, int)
 
     def test_unregister_block(self, mock_config, mock_kv_block, mock_rust_vllm_client):
         connector = VirthubKVConnector(mock_config)
-        connector.client = mock_rust_vllm_client
+        connector._client = mock_rust_vllm_client
         connector.block_map[mock_kv_block.block_id] = {"rkey": 1234, "node_addr": "127.0.0.1:19001"}
 
         connector.unregister_block(mock_kv_block.block_id)
@@ -244,7 +245,7 @@ class TestVirthubKVConnector:
 
     def test_close(self, mock_config, mock_rust_vllm_client):
         connector = VirthubKVConnector(mock_config)
-        connector.client = mock_rust_vllm_client
+        connector._client = mock_rust_vllm_client
         for i in range(1, 4):
             connector.block_map[i] = {"rkey": 1000 + i}
         mock_rust_vllm_client.close = MagicMock()

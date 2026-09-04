@@ -1,4 +1,4 @@
-// src/master/src/scheduler.rs
+// virthub/src/master/src/scheduler.rs
 
 use dashmap::DashMap;
 use klnk_core::domain::NodeId;
@@ -8,14 +8,15 @@ use std::sync::Arc;
 use thiserror::Error;
 use virthub_config::VirthubConfig;
 
+use precision::hysteresis::MemoryPressureState;
+use precision::policy::PackedBlockPolicy;
+use precision::Predictor;
+
 /// Scheduling policy strategy for placement of new shared memory regions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SchedulingPolicy {
-    /// Least-loaded node first based on allocated memory ratio
     LeastLoaded,
-    /// Round-robin distribution across available nodes
     RoundRobin,
-    /// Strict NUMA affinity matching the caller's target NUMA socket
     NumaAffinity,
 }
 
@@ -106,7 +107,8 @@ impl NodeResourceCapacity {
         if self.total_memory_bytes == 0 {
             1.0
         } else {
-            self.allocated_memory_bytes.load(Ordering::Relaxed) as f64 / self.total_memory_bytes as f64
+            self.allocated_memory_bytes.load(Ordering::Relaxed) as f64
+                / self.total_memory_bytes as f64
         }
     }
 }
@@ -126,25 +128,36 @@ pub struct PlacementDecision {
 /// Performance optimizations:
 /// - Nodes stored in a `DashMap` for concurrent access.
 /// - `schedule_allocation` avoids cloning `NodeResourceCapacity` by extracting
-///   only the necessary fields (node id, available memory, load ratio, numa count)
-///   into a lightweight tuple. This reduces allocation overhead.
+///   only the necessary fields into lightweight tuples.
 /// - Round‑robin index is atomic, ensuring thread safety without locks.
+///
+/// Precision prediction integration:
+/// - The scheduler holds an optional `Predictor` for allocation‑time
+///   precision decisions.
+/// - It maintains a memory‑pressure hysteresis state that can be updated
+///   from the free‑block ratio and used to influence predictor output.
 #[derive(Debug)]
 pub struct ClusterScheduler {
     policy: SchedulingPolicy,
     config: SchedulerConfig,
     nodes: DashMap<NodeId, NodeResourceCapacity>,
     next_rr_index: AtomicU64,
+    /// Optional precision predictor (initialised when model layer count is known).
+    predictor: parking_lot::RwLock<Option<Predictor>>,
+    /// Current memory‑pressure hysteresis state.
+    pressure_state: parking_lot::RwLock<MemoryPressureState>,
 }
 
 impl ClusterScheduler {
-    /// Instantiates a new `ClusterScheduler` with explicit policy and config parameters.
+    /// Instantiates a new `ClusterScheduler` with explicit policy and config.
     pub fn new(policy: SchedulingPolicy, config: SchedulerConfig) -> Arc<Self> {
         Arc::new(Self {
             policy,
             config,
             nodes: DashMap::new(),
             next_rr_index: AtomicU64::new(0),
+            predictor: parking_lot::RwLock::new(None),
+            pressure_state: parking_lot::RwLock::new(MemoryPressureState::Nominal),
         })
     }
 
@@ -152,6 +165,63 @@ impl ClusterScheduler {
     pub fn from_config(config: &VirthubConfig) -> Arc<Self> {
         let sched_config = SchedulerConfig::from_app_config(config);
         Self::new(SchedulingPolicy::LeastLoaded, sched_config)
+    }
+
+    /// Initializes the precision predictor with the given total number of
+    /// transformer layers. This is called once the model shape is known.
+    pub fn init_predictor(&self, total_layers: usize) {
+        let mut guard = self.predictor.write();
+        *guard = Some(Predictor::new(total_layers));
+    }
+
+    /// Returns true if a predictor has been initialised.
+    pub fn has_predictor(&self) -> bool {
+        self.predictor.read().is_some()
+    }
+
+    /// Updates the memory‑pressure hysteresis state using the current
+    /// free‑block / total‑block counts. The pressure ratio `mu` is computed
+    /// as `1.0 - free_blocks / total_blocks`, clamped to [0.0, 1.0].
+    pub fn update_memory_pressure(&self, free_blocks: usize, total_blocks: usize) {
+        if total_blocks == 0 {
+            return;
+        }
+        let mu = 1.0 - (free_blocks as f64 / total_blocks as f64);
+        let mut state = self.pressure_state.write();
+        *state = state.update(mu);
+    }
+
+    /// Returns the current memory‑pressure state.
+    pub fn current_pressure_state(&self) -> MemoryPressureState {
+        *self.pressure_state.read()
+    }
+
+    /// Predicts the packed block policy for a KV block using the allocation‑time
+    /// precision predictor, if one is available.
+    ///
+    /// Returns `None` if the predictor has not been initialised.
+    pub fn predict_block_policy(
+        &self,
+        layer_idx: usize,
+        token_start: usize,
+        seq_len: usize,
+        head_mask: u32,
+        retrieval_flag: bool,
+    ) -> Option<PackedBlockPolicy> {
+        let guard = self.predictor.read();
+        if let Some(predictor) = guard.as_ref() {
+            let h_mem = self.current_pressure_state();
+            Some(predictor.predict(
+                layer_idx,
+                token_start,
+                seq_len,
+                h_mem,
+                head_mask,
+                retrieval_flag,
+            ))
+        } else {
+            None
+        }
     }
 
     /// Registers or updates a node's resource availability in the cluster registry.
@@ -218,7 +288,8 @@ impl ClusterScheduler {
                     .unwrap()
             }
             SchedulingPolicy::RoundRobin => {
-                let idx = (self.next_rr_index.fetch_add(1, Ordering::Relaxed) as usize) % candidates.len();
+                let idx = (self.next_rr_index.fetch_add(1, Ordering::Relaxed) as usize)
+                    % candidates.len();
                 candidates[idx].0
             }
             SchedulingPolicy::NumaAffinity => {
@@ -281,22 +352,25 @@ impl ClusterScheduler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use klnk_core::domain::NodeId;
+
+    fn make_test_scheduler() -> Arc<ClusterScheduler> {
+        let config = SchedulerConfig::default();
+        ClusterScheduler::new(SchedulingPolicy::LeastLoaded, config)
+    }
 
     #[test]
     fn test_least_loaded_scheduling_with_config() {
-        let config = SchedulerConfig::default();
-        let scheduler = ClusterScheduler::new(SchedulingPolicy::LeastLoaded, config);
+        let scheduler = make_test_scheduler();
 
-        let node1 = NodeResourceCapacity::new(NodeId(1), 10 * 1024 * 1024 * 1024, 2); // 10 GB
-        let node2 = NodeResourceCapacity::new(NodeId(2), 10 * 1024 * 1024 * 1024, 2); // 10 GB
+        let node1 = NodeResourceCapacity::new(NodeId(1), 10 * 1024 * 1024 * 1024, 2);
+        let node2 = NodeResourceCapacity::new(NodeId(2), 10 * 1024 * 1024 * 1024, 2);
 
-        // Pre-allocate 4GB on node1
         node1.allocated_memory_bytes.store(4 * 1024 * 1024 * 1024, Ordering::Relaxed);
 
         scheduler.register_node(node1);
         scheduler.register_node(node2);
 
-        // Schedule 1GB allocation: node2 has 0% load vs node1's 40% load -> node2 should be chosen
         let decision = scheduler
             .schedule_allocation(1 * 1024 * 1024 * 1024, None)
             .expect("Scheduling should succeed");
@@ -307,8 +381,7 @@ mod tests {
 
     #[test]
     fn test_round_robin_scheduling() {
-        let config = SchedulerConfig::default();
-        let scheduler = ClusterScheduler::new(SchedulingPolicy::RoundRobin, config);
+        let scheduler = ClusterScheduler::new(SchedulingPolicy::RoundRobin, SchedulerConfig::default());
 
         let node1 = NodeResourceCapacity::new(NodeId(1), 10 * 1024 * 1024 * 1024, 1);
         let node2 = NodeResourceCapacity::new(NodeId(2), 10 * 1024 * 1024 * 1024, 1);
@@ -324,31 +397,55 @@ mod tests {
 
     #[test]
     fn test_no_capacity_error() {
-        let config = SchedulerConfig::default();
-        let scheduler = ClusterScheduler::new(SchedulingPolicy::LeastLoaded, config);
-        let node1 = NodeResourceCapacity::new(NodeId(1), 1024, 1); // 1 KB total
+        let scheduler = make_test_scheduler();
+        let node1 = NodeResourceCapacity::new(NodeId(1), 1024, 1);
         scheduler.register_node(node1);
 
-        // Request 1 MB -> should fail with NoNodeAvailable
         let res = scheduler.schedule_allocation(1024 * 1024, None);
         assert!(matches!(res, Err(SchedulerError::NoNodeAvailable { .. })));
     }
 
     #[test]
     fn test_numa_affinity_scheduling() {
-        let config = SchedulerConfig::default();
-        let scheduler = ClusterScheduler::new(SchedulingPolicy::NumaAffinity, config);
+        let scheduler = ClusterScheduler::new(SchedulingPolicy::NumaAffinity, SchedulerConfig::default());
 
-        let node1 = NodeResourceCapacity::new(NodeId(1), 10 * 1024 * 1024 * 1024, 4); // 4 NUMA nodes
-        let node2 = NodeResourceCapacity::new(NodeId(2), 10 * 1024 * 1024 * 1024, 2); // 2 NUMA nodes
+        let node1 = NodeResourceCapacity::new(NodeId(1), 10 * 1024 * 1024 * 1024, 4);
+        let node2 = NodeResourceCapacity::new(NodeId(2), 10 * 1024 * 1024 * 1024, 2);
 
         scheduler.register_node(node1);
         scheduler.register_node(node2);
 
-        // Request with NUMA hint 3: only node1 qualifies (4 > 3)
         let decision = scheduler
             .schedule_allocation(1024, Some(3))
             .expect("Scheduling should succeed");
         assert_eq!(decision.selected_node_id, NodeId(1));
+    }
+
+    #[test]
+    fn test_memory_pressure_update() {
+        let scheduler = make_test_scheduler();
+
+        // Initially Nominal
+        assert_eq!(scheduler.current_pressure_state(), MemoryPressureState::Nominal);
+
+        // Simulate high pressure (critical)
+        scheduler.update_memory_pressure(10, 100); // mu = 0.90
+        assert_eq!(scheduler.current_pressure_state(), MemoryPressureState::Critical);
+
+        // Simulate low pressure
+        scheduler.update_memory_pressure(90, 100); // mu = 0.10
+        assert_eq!(scheduler.current_pressure_state(), MemoryPressureState::Nominal);
+    }
+
+    #[test]
+    fn test_predictor_initialisation_and_prediction() {
+        let scheduler = make_test_scheduler();
+        scheduler.init_predictor(32);
+        assert!(scheduler.has_predictor());
+
+        let policy = scheduler
+            .predict_block_policy(10, 100, 1000, 0xFFFFFFFF, false)
+            .expect("policy should be produced");
+        assert_eq!(policy.precision(), precision::policy::PrecisionLevel::Fp8);
     }
 }

@@ -9,6 +9,9 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use thiserror::Error;
 
+use precision::PackedBlockPolicy;
+use crate::psp_kv::PspKvSidecarDescriptor;
+
 /// Standard block size allocation boundary (default: 4096 bytes / 4KB aligned)
 pub const DEFAULT_BLOCK_SIZE: usize = 4096;
 
@@ -135,18 +138,26 @@ unsafe impl Sync for RawBlockBuffer {}
 
 /// High-performance Key-Value block representation holding payload data and checksums.
 ///
-/// The payload is stored inside an `Arc<Vec<u8>>` to enable cheap cloning
-/// (reference counting) instead of deep copies. Mutation is performed via
-/// `Arc::make_mut`, which clones the underlying buffer only when shared.
+/// In addition to the header and payload, this struct now carries optional
+/// PSP‑KV metadata: a packed precision policy and a sidecar descriptor.
+/// These fields are used by the upper‑layer precision management and are
+/// serialized together with the block when transmitted over the network.
 #[derive(Clone)]
 pub struct KvBlock {
     header: KvBlockHeader,
     payload: Arc<Vec<u8>>,
     ref_count: Arc<AtomicU32>,
+    /// Packed precision policy (optional). Contains precision level,
+    /// residual flag, and active head mask.
+    precision_policy: Option<PackedBlockPolicy>,
+    /// Sidecar descriptor (optional). Contains pointers, scales, and
+    /// head presence masks for quantized formats.
+    sidecar: Option<PspKvSidecarDescriptor>,
 }
 
 impl KvBlock {
     /// Instantiates a new KV Block with computed CRC32 checksum over the payload.
+    /// The precision policy and sidecar are initialized to `None`.
     pub fn new(key: KvBlockKey, payload: Vec<u8>) -> Self {
         let checksum = crc32fast::hash(&payload);
         let payload_len = payload.len() as u32;
@@ -162,7 +173,22 @@ impl KvBlock {
             header,
             payload: Arc::new(payload),
             ref_count: Arc::new(AtomicU32::new(1)),
+            precision_policy: None,
+            sidecar: None,
         }
+    }
+
+    /// Instantiates a new KV Block with the given precision policy and sidecar.
+    pub fn new_with_policy(
+        key: KvBlockKey,
+        payload: Vec<u8>,
+        precision_policy: Option<PackedBlockPolicy>,
+        sidecar: Option<PspKvSidecarDescriptor>,
+    ) -> Self {
+        let mut block = Self::new(key, payload);
+        block.precision_policy = precision_policy;
+        block.sidecar = sidecar;
+        block
     }
 
     /// Verifies block payload integrity against header CRC32 checksum.
@@ -206,6 +232,26 @@ impl KvBlock {
         self.header.payload_len = self.payload.len() as u32;
     }
 
+    /// Returns the optional packed precision policy.
+    pub fn precision_policy(&self) -> Option<PackedBlockPolicy> {
+        self.precision_policy
+    }
+
+    /// Sets the packed precision policy.
+    pub fn set_precision_policy(&mut self, policy: Option<PackedBlockPolicy>) {
+        self.precision_policy = policy;
+    }
+
+    /// Returns the optional PSP‑KV sidecar descriptor.
+    pub fn sidecar(&self) -> Option<&PspKvSidecarDescriptor> {
+        self.sidecar.as_ref()
+    }
+
+    /// Sets the PSP‑KV sidecar descriptor.
+    pub fn set_sidecar(&mut self, sidecar: Option<PspKvSidecarDescriptor>) {
+        self.sidecar = sidecar;
+    }
+
     /// Retains reference counter.
     pub fn retain(&self) {
         self.ref_count.fetch_add(1, Ordering::Relaxed);
@@ -216,19 +262,28 @@ impl KvBlock {
         self.ref_count.fetch_sub(1, Ordering::Release)
     }
 
-    /// Serializes entire block (header + payload) into a byte vector.
+    /// Serializes entire block (header + payload + optional metadata) into a byte vector.
     pub fn serialize(&self) -> Result<Vec<u8>, KvBlockError> {
-        let bytes = bincode::serialize(&(&self.header, &*self.payload))?;
+        let bytes = bincode::serialize(&(
+            &self.header,
+            &*self.payload,
+            self.precision_policy,
+            self.sidecar,
+        ))?;
         Ok(bytes)
     }
 
     /// Deserializes a block from a byte slice and verifies checksum integrity.
     pub fn deserialize(bytes: &[u8]) -> Result<Self, KvBlockError> {
-        let (header, payload): (KvBlockHeader, Vec<u8>) = bincode::deserialize(bytes)?;
+        let (header, payload, precision_policy, sidecar):
+            (KvBlockHeader, Vec<u8>, Option<PackedBlockPolicy>, Option<PspKvSidecarDescriptor>) =
+            bincode::deserialize(bytes)?;
         let block = Self {
             header,
             payload: Arc::new(payload),
             ref_count: Arc::new(AtomicU32::new(1)),
+            precision_policy,
+            sidecar,
         };
 
         block.verify_checksum()?;
@@ -237,13 +292,16 @@ impl KvBlock {
 
     /// Batch registration of multiple blocks from serialized data (optimization).
     pub fn deserialize_batch(data: &[u8]) -> Result<Vec<Self>, KvBlockError> {
-        let blocks: Vec<(KvBlockHeader, Vec<u8>)> = bincode::deserialize(data)?;
+        let blocks: Vec<(KvBlockHeader, Vec<u8>, Option<PackedBlockPolicy>, Option<PspKvSidecarDescriptor>)> =
+            bincode::deserialize(data)?;
         let mut result = Vec::with_capacity(blocks.len());
-        for (header, payload) in blocks {
+        for (header, payload, precision_policy, sidecar) in blocks {
             let block = Self {
                 header,
                 payload: Arc::new(payload),
                 ref_count: Arc::new(AtomicU32::new(1)),
+                precision_policy,
+                sidecar,
             };
             block.verify_checksum()?;
             result.push(block);
@@ -258,6 +316,8 @@ impl fmt::Debug for KvBlock {
             .field("header", &self.header)
             .field("payload_len", &self.payload.len())
             .field("ref_count", &self.ref_count.load(Ordering::Relaxed))
+            .field("precision_policy", &self.precision_policy)
+            .field("sidecar", &self.sidecar)
             .finish()
     }
 }
@@ -265,6 +325,8 @@ impl fmt::Debug for KvBlock {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::psp_kv::PspKvSidecarDescriptor;
+    use precision::{PackedBlockPolicy, PrecisionLevel};
 
     #[test]
     fn test_kv_block_checksum_verification() {
@@ -284,16 +346,20 @@ mod tests {
     }
 
     #[test]
-    fn test_kv_block_serialization_roundtrip() {
+    fn test_kv_block_serialization_roundtrip_with_metadata() {
         let key = KvBlockKey::new(42, 1001);
         let payload = vec![0xAB; 512];
+        let policy = PackedBlockPolicy::new(PrecisionLevel::Fp8, false, 0xFFFFFF);
+        let sidecar = PspKvSidecarDescriptor::default();
 
-        let block = KvBlock::new(key, payload.clone());
+        let block = KvBlock::new_with_policy(key, payload.clone(), Some(policy), Some(sidecar));
         let serialized = block.serialize().expect("Serialization should succeed");
 
         let decoded = KvBlock::deserialize(&serialized).expect("Deserialization should succeed");
         assert_eq!(decoded.key(), key);
         assert_eq!(decoded.payload(), payload.as_slice());
+        assert_eq!(decoded.precision_policy(), Some(policy));
+        assert_eq!(decoded.sidecar(), Some(&sidecar));
     }
 
     #[test]
@@ -315,7 +381,6 @@ mod tests {
         let key = KvBlockKey::new(1, 1);
         let block = KvBlock::new(key, vec![0; 1024]);
         let clone = block.clone();
-        // Both should point to the same allocation (Arc count > 1)
         assert!(Arc::ptr_eq(&block.payload, &clone.payload));
     }
 
@@ -324,9 +389,7 @@ mod tests {
         let key = KvBlockKey::new(2, 2);
         let original = KvBlock::new(key, vec![0; 10]);
         let mut clone = original.clone();
-        // Mutate clone
         clone.payload_mut()[0] = 1;
-        // Original unchanged
         assert_eq!(original.payload()[0], 0);
         assert_eq!(clone.payload()[0], 1);
     }

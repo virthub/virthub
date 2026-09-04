@@ -1,0 +1,16 @@
+# virthub/src/api/Cargo.toml
+
+[package]
+name = "virthub-api"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Shared API for decoupled DSM and KV-cache management"
+
+[dependencies]
+# Async trait support for the DsmBackend trait
+async-trait = "0.1"
+
+# Error handling
+thiserror = { workspace = true }

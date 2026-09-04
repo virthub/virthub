@@ -1,0 +1,29 @@
+# virthub/src/klnk/klnk-dsm-api/Cargo.toml
+
+[package]
+name = "klnk-dsm-api"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "DSM adapter implementing the Virthub API trait using KLNK infrastructure"
+
+[dependencies]
+# Shared API trait crate (no internal dependencies)
+virthub-api = { path = "../../api" }
+
+# Internal DSM crates
+klnk-core = { path = "../klnk-core" }
+librmashim = { path = "../librmashim" }
+
+# Async trait support
+async-trait = "0.1"
+
+# Error handling
+thiserror = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true, features = ["sync", "rt", "macros", "net"] }
+
+# Logging
+tracing = { workspace = true }

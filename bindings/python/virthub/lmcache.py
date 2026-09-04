@@ -1,20 +1,19 @@
 # bindings/python/virthub/lmcache.py
-
-"""
-Virthub LMCache Connector — performance-optimized version.
-
-Optimizations:
-- Module-level cache for connector instances (avoid re-creating clients)
-- Thread-safe stub using `threading.RLock`
-- Batch operations (`put_chunks`, `get_chunks`, `remove_chunks`) to reduce per‑chunk overhead
-- Reuse of native Rust client when available, avoiding repeated TOML temp file creation
-- Lightweight Python dicts, no unnecessary payload copies
-- Implements LMCache ``BackendInterface`` as before
-
-When the native extension is built, all operations use the native `_virthub` module
-(which is currently a set of synchronous no‑op stubs). Otherwise, an in‑memory
-async stub is used.
-"""
+#
+# LMCache KV Connector for Virthub.
+# Implements BackendInterface expected by LMCache for remote storage tier integration.
+# Provides async operations for chunk-based KV cache storage and retrieval.
+# Native Rust client used when available; otherwise async in-memory stub for testing.
+# Connector instances are cached per configuration to avoid repeated initialization.
+#
+# This module provides:
+# - VirthubLmCacheConnector: main connector class implementing LMCache BackendInterface
+# - KvBlockKey: key type for identifying KV cache chunks (namespace + block ID)
+# - StorageTier: storage tier enum (Dram, Ssd, Vram)
+#
+# Supports batch operations (put/get/remove chunks) for efficient multi-chunk
+# handling. RDMA-based remote fetching available for peer-to-peer transfers.
+# GPU is used for KV cache storage when available; otherwise CPU fallback.
 
 import logging
 import os
@@ -181,6 +180,10 @@ class VirthubLmCacheConnector:
         self.config = config
         self._client = self._create_client()
         self.block_map: Dict[int, Any] = {}
+
+    @property
+    def client(self):
+        return self._client
 
     def _create_client(self):
         if _RUST_AVAILABLE:

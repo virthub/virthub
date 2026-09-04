@@ -1,0 +1,31 @@
+# virthub/src/precision/Cargo.toml
+
+[package]
+name = "precision"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Allocation-time precision prediction engine for PSP-KV"
+
+[dependencies]
+# Serialization for policy types
+serde = { workspace = true, features = ["derive"] }
+
+# Error handling
+thiserror = { workspace = true }
+
+[dev-dependencies]
+# Async runtime (optional, for future async tests)
+tokio = { workspace = true, features = ["macros", "rt"] }
+
+# Benchmarking framework
+criterion = "0.5"
+
+[[bench]]
+name = "predictor_bench"
+harness = false
+
+[[bench]]
+name = "packing_bench"
+harness = false

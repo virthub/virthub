@@ -1,4 +1,4 @@
-# scripts/patch_vllm_connector.py
+# virthub/scripts/patch_vllm_connector.py
 #
 # Patch vLLM's KV connector factory to recognize the `virthub` connector.
 #

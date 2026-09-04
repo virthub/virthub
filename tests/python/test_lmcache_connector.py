@@ -35,11 +35,8 @@ class TestVirthubLmCacheConnector:
     def test_initialization(self, mock_config):
         connector = VirthubLmCacheConnector(mock_config)
         assert connector.config == mock_config
-        # With the stub, client is an _InMemoryClient, not None
         assert connector.client is not None
-        # block_map is empty initially
         assert connector.block_map == {}
-        # The stub's internal store is a dict, accessible via client.store
         assert isinstance(connector.client.store, dict)
 
     @pytest.mark.asyncio
@@ -57,18 +54,15 @@ class TestVirthubLmCacheConnector:
             length=length,
         )
 
-        # The stub returns a plain dict; access by key
         assert meta is not None
         assert meta["key"] == mock_chunk_key
         assert meta["size_bytes"] == length
         assert meta["vaddr"] == vaddr
-        # block_map should be updated
         assert mock_chunk_key.block_id in connector.block_map
 
     @pytest.mark.asyncio
     async def test_get_chunk(self, mock_config, mock_chunk_key, mock_chunk_payload):
         connector = VirthubLmCacheConnector(mock_config)
-        # Put a chunk first
         await connector.put_chunk(
             key=mock_chunk_key,
             tier=StorageTier.Dram,
@@ -95,14 +89,12 @@ class TestVirthubLmCacheConnector:
 
         await connector.remove_chunk(mock_chunk_key)
 
-        # After removal, retrieval should fail
         with pytest.raises(KeyError):
             await connector.get_chunk(mock_chunk_key)
 
     @pytest.mark.asyncio
     async def test_fetch_remote_chunk(self, mock_config, mock_chunk_key):
         connector = VirthubLmCacheConnector(mock_config)
-        # fetch_remote_chunk is a method of the connector, not the internal client
         await connector.fetch_remote_chunk(
             key=mock_chunk_key,
             peer_addr="192.168.1.30:19001",
@@ -114,7 +106,6 @@ class TestVirthubLmCacheConnector:
 
     def test_error_handling(self, mock_config, mock_chunk_key, mock_chunk_payload):
         connector = VirthubLmCacheConnector(mock_config)
-        # The stub never raises, but we can verify that a missing key raises
         with pytest.raises(KeyError):
             import asyncio
             asyncio.run(connector.get_chunk(KvBlockKey(99, 99)))
@@ -154,6 +145,5 @@ class TestVirthubLmCacheConnector:
         )
 
         await connector.close()
-        # After close, the internal store is cleared
         with pytest.raises(KeyError):
             await connector.get_chunk(mock_chunk_key)

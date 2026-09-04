@@ -1,20 +1,19 @@
 # bindings/python/virthub/sglang.py
-
-"""
-Virthub SGLang Connector — performance-optimized version.
-
-Optimizations:
-- Module-level cache for connector instances (avoid re-creating clients)
-- Thread-safe stub using `threading.RLock`
-- Reuse of native Rust client when available, avoiding repeated TOML temp file creation
-- Lightweight Python dicts and minimal copying
-- Synchronous API unchanged (blocks until operation completes)
-- Batch registration method for multiple prefixes to reduce per‑call overhead
-
-When the native extension is built, all operations use the native `_virthub`
-module (which is currently a set of synchronous no‑op stubs). Otherwise,
-an in‑memory stub is used.
-"""
+#
+# SGLang KV Connector for Virthub.
+# Provides prefix caching and RDMA-based KV cache sharing for SGLang serving.
+# Native Rust client used when available; otherwise in-memory stub for testing.
+# Connector instances are cached per configuration to avoid repeated initialization.
+# All operations are synchronous and block until completion.
+#
+# This module provides:
+# - VirthubSglangConnector: main connector class for SGLang integration
+# - In-memory stub for testing when Rust extension is not built
+# - Configuration-based instance caching for multi-worker scenarios
+#
+# The connector registers RadixAttention prefix nodes, fetches remote prefixes
+# via RDMA, and manages memory region lifecycle. GPU is used when available;
+# otherwise falls back to CPU with known limitations.
 
 import logging
 import os
@@ -139,6 +138,10 @@ class VirthubSglangConnector:
         self._client = self._create_client()
         # block_map is used only for the stub; the Rust client manages its own state.
         self.block_map: Dict[int, Any] = {}
+
+    @property
+    def client(self):
+        return self._client
 
     def _create_client(self):
         if _RUST_AVAILABLE:

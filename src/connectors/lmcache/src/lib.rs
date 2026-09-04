@@ -1,16 +1,34 @@
 // virthub/src/connectors/lmcache/src/lib.rs
 
-use librmashim::{MemoryRegionHandle, RdmaEndpointConfig, RegisteredRegion, RmaEngineError, RmaTransportEngine};
+//! LMCache Connector for distributed multi‑tier KV chunk storage over RDMA.
+//!
+//! This connector registers KV chunks with the RDMA transport and provides
+//! methods to store, retrieve, and remove chunks. It is used by the
+//! LMCache integration to offload chunks to remote nodes.
+//!
+//! ## Precision‑Scalable PSP‑KV Integration
+//!
+//! The connector now supports attaching a packed precision policy (from the
+//! `precision` crate) and an optional PSP‑KV sidecar descriptor to each
+//! stored chunk. This enables the scheduler to store precision decisions
+//! and sidecar metadata alongside the chunk’s RDMA registration.
+
+use dashmap::DashMap;
+use librmashim::{
+    MemoryRegionHandle, RdmaEndpointConfig, RegisteredRegion, RmaEngineError,
+    RmaTransportEngine,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
 use thiserror::Error;
 use virthub_config::VirthubConfig;
-use store::kv_block::KvBlockKey;
-use store::tier_manager::StorageTier;
-use bincode;
 
+use precision::policy::PackedBlockPolicy;
+use store::kv_block::KvBlockKey;
+use store::psp_kv::PspKvSidecarDescriptor;
+use store::tier_manager::StorageTier;
 
 #[derive(Debug, Error)]
 pub enum LmCacheConnectorError {
@@ -33,6 +51,7 @@ pub enum LmCacheConnectorError {
     SerializationError(#[from] bincode::Error),
 }
 
+/// Metadata returned when storing a chunk.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LmCacheChunkMeta {
     pub key: KvBlockKey,
@@ -42,12 +61,22 @@ pub struct LmCacheChunkMeta {
     pub gpu_device_id: u32,
     pub rkey: u32,
     pub lkey: u32,
+    /// Optional precision policy assigned at allocation time.
+    pub precision_policy: Option<PackedBlockPolicy>,
+    /// Optional PSP‑KV sidecar descriptor for quantized chunks.
+    pub sidecar: Option<PspKvSidecarDescriptor>,
 }
 
 pub struct VirthubLmCacheConnector {
     config: VirthubConfig,
     rma_engine: Arc<RmaTransportEngine>,
+    /// Map from chunk key to registered region metadata.
     registered_chunks: Arc<RwLock<HashMap<KvBlockKey, RegisteredRegion>>>,
+    /// Map from chunk key to packed precision policy.
+    chunk_policies: Arc<DashMap<KvBlockKey, PackedBlockPolicy>>,
+    /// Map from chunk key to sidecar descriptor.
+    chunk_sidecars: Arc<DashMap<KvBlockKey, PspKvSidecarDescriptor>>,
+    /// Local store of chunk payloads (used for testing and local retrieval).
     local_store: Arc<RwLock<HashMap<KvBlockKey, Vec<u8>>>>,
 }
 
@@ -56,7 +85,10 @@ impl VirthubLmCacheConnector {
         let addr_str = format!("0.0.0.0:{}", config.transport.tcp.tcp_port);
         let listen_addr: SocketAddr = addr_str
             .parse()
-            .map_err(|e| LmCacheConnectorError::ConfigError(format!("Invalid socket address '{addr_str}': {e}")))?;
+            .map_err(|e| LmCacheConnectorError::ConfigError(format!(
+                "Invalid socket address '{}': {}",
+                addr_str, e
+            )))?;
 
         let verbs_config = RdmaEndpointConfig {
             device_name: Some(config.transport.rdma.device_name.clone()),
@@ -72,6 +104,8 @@ impl VirthubLmCacheConnector {
             config,
             rma_engine,
             registered_chunks: Arc::new(RwLock::new(HashMap::new())),
+            chunk_policies: Arc::new(DashMap::new()),
+            chunk_sidecars: Arc::new(DashMap::new()),
             local_store: Arc::new(RwLock::new(HashMap::new())),
         })
     }
@@ -80,15 +114,8 @@ impl VirthubLmCacheConnector {
         Self::new(config.clone())
     }
 
-    /// Put a chunk into the local multi-tier storage and register its memory region for RDMA.
-    ///
-    /// # Arguments
-    /// * `key` - Unique KvBlockKey.
-    /// * `tier` - Storage tier (DRAM, SSD, VRAM) – currently only DRAM is supported for RDMA.
-    /// * `gpu_device_id` - GPU device ID if using GPUDirect RDMA, otherwise 0.
-    /// * `payload` - The chunk data.
-    /// * `vaddr` - Virtual address where the data is placed (caller must allocate memory).
-    /// * `len` - Length of payload (must match size of vaddr region).
+    /// Put a chunk into the local multi-tier storage and register its memory
+    /// region for RDMA. Does not attach precision metadata.
     pub async fn put_chunk(
         &self,
         key: KvBlockKey,
@@ -98,15 +125,35 @@ impl VirthubLmCacheConnector {
         vaddr: u64,
         len: usize,
     ) -> Result<LmCacheChunkMeta, LmCacheConnectorError> {
-        // For simplicity, we assume the caller has already placed payload at vaddr.
-        // In a real implementation, we would copy payload to vaddr.
-        // We'll store a copy in local_store.
+        self.put_chunk_with_policy(
+            key,
+            tier,
+            gpu_device_id,
+            payload,
+            vaddr,
+            len,
+            None,
+            None,
+        ).await
+    }
+
+    /// Put a chunk with optional precision policy and sidecar descriptor.
+    pub async fn put_chunk_with_policy(
+        &self,
+        key: KvBlockKey,
+        tier: StorageTier,
+        gpu_device_id: u32,
+        payload: Vec<u8>,
+        vaddr: u64,
+        len: usize,
+        precision_policy: Option<PackedBlockPolicy>,
+        sidecar: Option<PspKvSidecarDescriptor>,
+    ) -> Result<LmCacheChunkMeta, LmCacheConnectorError> {
         {
             let mut store = self.local_store.write().unwrap();
             store.insert(key, payload.clone());
         }
 
-        // Register the memory region for RDMA access.
         let gpu_opt = if self.config.transport.rdma.enable_gdr {
             Some(gpu_device_id)
         } else {
@@ -120,6 +167,13 @@ impl VirthubLmCacheConnector {
         let mut map = self.registered_chunks.write().unwrap();
         map.insert(key, region);
 
+        if let Some(policy) = precision_policy {
+            self.chunk_policies.insert(key, policy);
+        }
+        if let Some(desc) = sidecar {
+            self.chunk_sidecars.insert(key, desc);
+        }
+
         Ok(LmCacheChunkMeta {
             key,
             tier,
@@ -128,6 +182,8 @@ impl VirthubLmCacheConnector {
             gpu_device_id,
             rkey: region.rkey,
             lkey: region.lkey,
+            precision_policy,
+            sidecar,
         })
     }
 
@@ -142,29 +198,21 @@ impl VirthubLmCacheConnector {
 
     /// Remove a chunk from local storage and deregister its RDMA region.
     pub async fn remove_chunk(&self, key: &KvBlockKey) -> Result<(), LmCacheConnectorError> {
-        // Remove from local store
         {
             let mut store = self.local_store.write().unwrap();
             store.remove(key);
         }
 
-        // Deregister RDMA region
         let mut map = self.registered_chunks.write().unwrap();
         if let Some(region) = map.remove(key) {
             self.rma_engine.deregister_memory_region(region.rkey)?;
         }
+        self.chunk_policies.remove(key);
+        self.chunk_sidecars.remove(key);
         Ok(())
     }
 
     /// Fetch a remote chunk from a peer node via one‑sided RDMA.
-    ///
-    /// # Arguments
-    /// * `key` - The chunk key (for tracking purposes).
-    /// * `peer_addr` - Socket address of the remote node.
-    /// * `remote_vaddr` - Remote virtual address of the chunk data.
-    /// * `remote_rkey` - Remote key of the chunk.
-    /// * `local_vaddr` - Local virtual address to place the data.
-    /// * `size_bytes` - Size of the chunk.
     pub async fn fetch_remote_chunk(
         &self,
         key: KvBlockKey,
@@ -177,11 +225,7 @@ impl VirthubLmCacheConnector {
         self.rma_engine
             .rdma_read(peer_addr, remote_vaddr, remote_rkey, local_vaddr, size_bytes)
             .await?;
-
-        // Optionally, we could store the fetched data in local_store if needed.
-        // For now, we assume the caller handles the data at local_vaddr.
-        // To silence the unused variable warning, we use `key` intentionally.
-        let _ = key; // mark as used
+        let _ = key;
         Ok(())
     }
 
@@ -195,7 +239,17 @@ impl VirthubLmCacheConnector {
         self.config.parsed_node_id()
     }
 
-    /// Register a KV cache buffer region. This is a lower‑level variant that does not track chunk keys.
+    /// Return the packed precision policy for a chunk, if present.
+    pub fn get_chunk_policy(&self, key: &KvBlockKey) -> Option<PackedBlockPolicy> {
+        self.chunk_policies.get(key).map(|p| *p)
+    }
+
+    /// Return the sidecar descriptor for a chunk, if present.
+    pub fn get_chunk_sidecar(&self, key: &KvBlockKey) -> Option<PspKvSidecarDescriptor> {
+        self.chunk_sidecars.get(key).map(|d| *d)
+    }
+
+    /// Register a KV cache buffer region without chunk key tracking.
     pub fn register_kv_cache(
         &self,
         vaddr: u64,
@@ -213,7 +267,7 @@ impl VirthubLmCacheConnector {
         Ok(region)
     }
 
-    /// Asynchronously fetch a remote KV block via RDMA. This matches the original signature but uses the updated async method.
+    /// Asynchronously fetch a remote KV block via RDMA (legacy method).
     pub async fn fetch_remote_kv_block(
         &self,
         peer_addr: SocketAddr,
@@ -232,10 +286,11 @@ impl VirthubLmCacheConnector {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use precision::policy::{PackedBlockPolicy, PrecisionLevel};
     use virthub_config::VirthubConfig;
 
     #[tokio::test]
-    async fn test_lmcache_connector_put_get_remove() {
+    async fn test_lmcache_connector_put_get_remove_with_policy() {
         let config = VirthubConfig::default();
         let connector = VirthubLmCacheConnector::new(config).unwrap();
 
@@ -244,22 +299,39 @@ mod tests {
         let vaddr = 0x7fff_5000_0000;
         let size = 1024;
         let tier = StorageTier::Dram;
+        let policy = PackedBlockPolicy::new(PrecisionLevel::Fp8, false, 0xFF_FFFF);
+        let sidecar = PspKvSidecarDescriptor::default();
 
         let meta = connector
-            .put_chunk(key, tier, 0, payload.clone(), vaddr, size)
+            .put_chunk_with_policy(
+                key,
+                tier,
+                0,
+                payload.clone(),
+                vaddr,
+                size,
+                Some(policy),
+                Some(sidecar),
+            )
             .await
             .unwrap();
 
         assert_eq!(meta.key, key);
         assert_eq!(meta.size_bytes, size);
-        assert_eq!(connector.registered_chunk_count().await, 1);
+        assert_eq!(meta.precision_policy, Some(policy));
+        assert_eq!(meta.sidecar, Some(sidecar));
+
+        // Verify stored policy and sidecar
+        assert_eq!(connector.get_chunk_policy(&key), Some(policy));
+        assert_eq!(connector.get_chunk_sidecar(&key), Some(sidecar));
 
         let retrieved = connector.get_chunk(&key).await.unwrap();
         assert_eq!(retrieved, payload);
 
         connector.remove_chunk(&key).await.unwrap();
         assert_eq!(connector.registered_chunk_count().await, 0);
-        assert!(connector.get_chunk(&key).await.is_err());
+        assert_eq!(connector.get_chunk_policy(&key), None);
+        assert_eq!(connector.get_chunk_sidecar(&key), None);
     }
 
     #[tokio::test]

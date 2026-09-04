@@ -1,4 +1,4 @@
-# scripts/benchmark_vllm_virthub.py
+# virthub/scripts/benchmark_vllm_virthub.py
 #
 # Benchmark vLLM with and without the Virthub KV connector.
 #

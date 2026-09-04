@@ -142,7 +142,6 @@ class TestLmCacheVirthub:
                 pytest.skip("Rust LMCache client not available")
             raise
 
-        # The stub returns a plain dict; access by key
         assert meta is not None
         assert meta["key"] == key
         assert meta["size_bytes"] == size
